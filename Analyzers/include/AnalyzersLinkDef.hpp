@@ -17,4 +17,6 @@
 #pragma link C++ class Vcb_DL+;
 #pragma link C++ class Vcb_FH+;
 
+#pragma link C++ class ExampleRun_base+;
+
 #endif
