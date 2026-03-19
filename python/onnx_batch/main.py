@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Sequence
 import subprocess
 import shlex
-import htcondor
+import htcondor2 as htcondor
 import uproot
 
 from rich.console import Console
