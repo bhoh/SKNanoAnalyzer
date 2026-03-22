@@ -218,7 +218,7 @@ MyCorrection::GetEraConfig(TString era, const string &btagging_eff_file,
     config.json_puWeights += tag + "puWeights_BCDEFGHI.json.gz";
     config.json_btagging += tag + "btagging.json.gz";
     // config.json_ctagging += "/2023_Summer23BPix/ctagging.json.gz";
-    // config.json_btagging_eff += "/2023BPix/BTV/" + btagging_eff_file;
+    config.json_btagging_eff += "/2024/BTV/" + btagging_eff_file;
     // config.json_ctagging_eff += "/2023BPix/BTV/" + ctagging_eff_file;
     // config.json_btagging_R += "/2023BPix/BTV/" + btagging_R_file;
     // config.json_ctagging_R += "/2023BPix/BTV/" + ctagging_R_file;

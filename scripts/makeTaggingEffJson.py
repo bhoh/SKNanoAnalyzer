@@ -248,10 +248,12 @@ def main():
                         help="Input ROOT file name", default='TTLJ_powheg.root')
     parser.add_argument('--out_name_str', dest='out_name_str',
                         help="Output JSON file name prefix", default='')
+    parser.add_argument('--totalEras', dest='totalEras', nargs='+',
+                        help="List of eras to process", default=['2024'])
     args = parser.parse_args()
 
     # List of eras to process (adjust as needed)
-    totalEras = ['2017']
+    totalEras = args.totalEras
     for era in totalEras:
         out_dir = os.path.join(os.environ.get('SKNANO_DATA', ''), era, 'BTV')
         os.makedirs(out_dir, exist_ok=True)

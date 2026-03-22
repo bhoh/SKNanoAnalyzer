@@ -333,4 +333,4 @@ dependencies:
     - torch_sparse==0.6.18+pt24cu121
     - torch_spline_conv==1.2.2+pt24cu121
 
-prefix: "/opt/conda/envs/Nano"
+prefix: "/data6/Users/bhoh/micromamba"
