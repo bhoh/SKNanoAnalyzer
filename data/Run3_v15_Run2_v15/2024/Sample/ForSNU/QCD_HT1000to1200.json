@@ -2,17 +2,10 @@
     "name": "QCD_HT1000to1200",
     "isMC": 1,
     "PD": "QCD-4Jets_Bin-HT-1000to1200_TuneCP5_13p6TeV_madgraphMLM-pythia8",
-<<<<<<< HEAD
-    "xsec": 883.7,
-    "sumsign": 114149137.0,
-    "sumW": 1306725106999.1104,
-    "nmc": 114149137.0,
-=======
     "xsec": 890.3,
     "sumsign": -1,
     "sumW": -1,
     "nmc": -1,
->>>>>>> ac0534c (sample list)
     "path": [
         "/gv0/DATA/SKNano/NanoAODv15/2024/QCD-4Jets_Bin-HT-1000to1200_TuneCP5_13p6TeV_madgraphMLM-pythia8/crab_MC_2024_QCD-4Jets_Bin-HT-1000to1200_TuneCP5_13p6TeV_madgraphMLM-pythia8/251121_124238/0000/tree_1.root",
         "/gv0/DATA/SKNano/NanoAODv15/2024/QCD-4Jets_Bin-HT-1000to1200_TuneCP5_13p6TeV_madgraphMLM-pythia8/crab_MC_2024_QCD-4Jets_Bin-HT-1000to1200_TuneCP5_13p6TeV_madgraphMLM-pythia8/251121_124238/0000/tree_2.root",

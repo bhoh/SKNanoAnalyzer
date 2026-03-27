@@ -5,10 +5,6 @@
     "xsec": 2.3600952,
     "sumsign": -1,
     "sumW": -1,
-<<<<<<< HEAD
-    "nmc": 0,
-    "path": []
-=======
     "nmc": -1,
     "path": [
         "/gv0/DATA/SKNano/NanoAODv15/2024/TBbartoLplusNuBbar-s-channel-4FS_TuneCP5_13p6TeV_amcatnlo-pythia8/crab_MC_2024_TBbartoLplusNuBbar-s-channel-4FS_TuneCP5_13p6TeV_amcatnlo-pythia8/251122_011323/0000/tree_1.root",
@@ -106,5 +102,4 @@
         "/gv0/DATA/SKNano/NanoAODv15/2024/TBbartoLplusNuBbar-s-channel-4FS_TuneCP5_13p6TeV_amcatnlo-pythia8/crab_MC_2024_TBbartoLplusNuBbar-s-channel-4FS_TuneCP5_13p6TeV_amcatnlo-pythia8/251122_011323/0000/tree_93.root",
         "/gv0/DATA/SKNano/NanoAODv15/2024/TBbartoLplusNuBbar-s-channel-4FS_TuneCP5_13p6TeV_amcatnlo-pythia8/crab_MC_2024_TBbartoLplusNuBbar-s-channel-4FS_TuneCP5_13p6TeV_amcatnlo-pythia8/251122_011323/0000/tree_94.root"
     ]
->>>>>>> ac0534c (sample list)
 }

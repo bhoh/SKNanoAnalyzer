@@ -2,17 +2,10 @@
     "name": "ST_tch_antitop_had",
     "isMC": 1,
     "PD": "TbarBQto2Q-t-channel-4FS_TuneCP5_13p6TeV_powheg-madspin-pythia8",
-<<<<<<< HEAD
-    "xsec": 46.73,
-    "sumsign": 40701826.0,
-    "sumW": 2026232026.1286392,
-    "nmc": 43279124.0,
-=======
     "xsec": 58.78152000000001,
     "sumsign": -1,
     "sumW": -1,
     "nmc": -1,
->>>>>>> ac0534c (sample list)
     "path": [
         "/gv0/DATA/SKNano/NanoAODv15/2024/TbarBQto2Q-t-channel-4FS_TuneCP5_13p6TeV_powheg-madspin-pythia8/crab_MC_2024_TbarBQto2Q-t-channel-4FS_TuneCP5_13p6TeV_powheg-madspin-pythia8/251121_123931/0000/tree_1.root",
         "/gv0/DATA/SKNano/NanoAODv15/2024/TbarBQto2Q-t-channel-4FS_TuneCP5_13p6TeV_powheg-madspin-pythia8/crab_MC_2024_TbarBQto2Q-t-channel-4FS_TuneCP5_13p6TeV_powheg-madspin-pythia8/251121_123931/0000/tree_2.root",

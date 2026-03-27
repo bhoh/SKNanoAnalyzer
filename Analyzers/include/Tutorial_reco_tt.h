@@ -23,7 +23,7 @@ public:
   float TriggerSafePtCut;
 
   RVec<Muon::MuonID> MuonIDs;
-  RVec<TString> MuonIDSFKeys;
+  RVec<TString> MuonIDISOSFKeys;
 
   MuonViewCollection AllMuonViews;
   ElectronViewCollection AllElectronViews;

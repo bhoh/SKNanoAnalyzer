@@ -13,7 +13,7 @@ Tutorial_reco_tt::~Tutorial_reco_tt() {}
 void Tutorial_reco_tt::initializeAnalyzer() {
 
   MuonIDs = { Muon::MuonID::POG_TIGHT };
-  MuonIDSFKeys = { "NUM_TightID_DEN_TrackerMuons" };
+  MuonIDISOSFKeys = { "NUM_TightID_DEN_TrackerMuons", "NUM_TightPFIso_DEN_TightID" };
 
   if (DataEra == "2016preVFP" || DataEra == "2016postVFP" ||
       DataEra == "2018") {
@@ -77,9 +77,10 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   const TString this_syst = systHelper->getCurrentSysName();
 
   Muon::MuonID this_muon_id = MuonIDs[0];
-  TString this_muon_id_sf_key = MuonIDSFKeys[0];
+  TString this_muon_id_sf_key = MuonIDISOSFKeys[0];
+  TString this_muon_iso_sf_key = MuonIDISOSFKeys[1];
 
-  FillHist(this_syst + "/NoCut_" + this_syst, 0., 1., 1, 0., 1.);
+  FillHist(this_syst + "/cutflow_" + this_syst, 0.5, 1., 6, 0., 6.);
 
   //==== MET Filter & Trigger
   if (!PassMetFilter(AllJetViews, ev)) return;
@@ -95,8 +96,6 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   RVec<Muon> muons = MaterializeMuons(AllMuonViews, SelectedMuonIndices);
   RVec<Electron> electrons = MaterializeElectrons(AllElectronViews, SelectedElectronIndices);
-
-  FillHist(this_syst + "/BaseLineLeptonSelection_" + this_syst, 0., 1., 1, 0., 1.);
 
   //==== Jet Selection
   std::vector<size_t> SelectedJetIndices = SelectJetIndices(AllJetViews, Jet::JetID::TIGHT, 30., 2.4);
@@ -114,6 +113,10 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   if (muons.at(0).Pt() <= TriggerSafePtCut) return;
   if (jets.size() < 4) return;
   if (METv.Pt() <= 20) return;
+  FillHist(this_syst + "/cutflow_" + this_syst, 1.5, 1., 6, 0., 6.);
+
+  if (!PassJetVetoMap(AllJetViews, AllMuonViews, "jetvetomap_fpix")) return;
+  FillHist(this_syst + "/cutflow_" + this_syst, 2.5, 1., 6, 0., 6.);
 
   //==== B-Tagging (DeepJet Medium WP example)
   int NBJets = 0;
@@ -131,7 +134,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   }
 
   if (NBJets != 2) return;
-  FillHist(this_syst + "/BaseLineCut_" + this_syst, 0., 1., 1, 0., 1.);
+  FillHist(this_syst + "/cutflow_" + this_syst, 3.5, 1., 6, 0., 6.);
 
   //==== Take leading four jets in pT
   std::vector<unsigned int> top_b_jet_candidates;
@@ -146,7 +149,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   }
 
   if(had_W_candidates.size() < 2 || top_b_jet_candidates.size() < 2) return;
-  FillHist(this_syst + "/PassLeading4Jets_" + this_syst, 0., 1., 1, 0., 1.);
+  FillHist(this_syst + "/cutflow_" + this_syst, 4.5, 1., 6, 0., 6.);
 
   //==== Combinatorics
   Tutorial_reco_tt::ttCombinatoric tt_combinatoric_1, tt_combinatoric_2;
@@ -182,8 +185,11 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   if (!IsDATA) {
     weight *= MCweight();
     weight *= ev.GetTriggerLumi("Full");
+    // muon official trigger SF is not available yet.
     float muon_id_sf = myCorr->GetMuonIDSF(this_muon_id_sf_key, muons, MyCorrection::variation::nom);
     weight *= muon_id_sf;
+    float muon_iso_sf = myCorr->GetMuonIDSF(this_muon_iso_sf_key, muons, MyCorrection::variation::nom);
+    weight *= muon_iso_sf;
     float pu_weight = myCorr->GetPUWeight(ev.nTrueInt(), MyCorrection::variation::nom);
     weight *= pu_weight;
     float btag_sf = myCorr->GetBTaggingSF(jets, 
@@ -204,7 +210,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   }
 
   if(best_combinatoric->best_chi2 >= 2e3) return;
-  FillHist(this_syst + "/PassChi2Cut_" + this_syst, 0., 1., 1, 0., 1.);
+  FillHist(this_syst + "/cutflow_" + this_syst, 5.5, 1., 6, 0., 6.);
   
   if (!IsDATA) {
       FillHist(this_syst + "/Chi2Cut/had_W_mass_" + this_syst, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
