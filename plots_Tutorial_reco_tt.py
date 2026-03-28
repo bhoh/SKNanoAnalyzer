@@ -42,12 +42,34 @@ plotConfigs = {
 HIST_PATHS = [
     "Central/Chi2Cut/had_W_mass_Central",
     "Central/Chi2Cut/had_top_mass_Central",
-    "Central/cutflow_Central"
+    "Central/Chi2Cut/lep_W_mass_Central",
+    "Central/Chi2Cut/lep_top_mass_Central",
+    "Central/Chi2Cut/chi2_Central",
+    #"Central/cutflow_Central",
+    "Central/noChi2Cut/had_W_mass_Central",
+    "Central/noChi2Cut/had_top_mass_Central",
+    "Central/noChi2Cut/lep_W_mass_Central",
+    "Central/noChi2Cut/lep_top_mass_Central",
+    "Central/noChi2Cut/chi2_Central",
+    #
+    "Central/baseLineCut/muon_pt0_Central",
+    "Central/baseLineCut/muon_eta0_Central",
+    "Central/baseLineCut/jet_pt0_Central",
+    "Central/baseLineCut/jet_eta0_Central",
+    "Central/baseLineCut/njets_Central",
+    "Central/baseLineCut/MET_pt_Central",
+    "Central/baseLineCut/MET_phi_Central",
+]
+
+SYSTEMATICS = [
+    "Central",
+    "JESTotal_Up",
+    "JESTotal_Down",
 ]
 
 reduction = 10 # scale MC hist by this factor
 
-def get_plots_from_files(histo_path):
+def get_plots_from_files(histo_path, syst=None):
     """Extract and combine histograms based on plotConfigs."""
     histos = []
     colors = []
@@ -55,7 +77,15 @@ def get_plots_from_files(histo_path):
     
     htotal = None
 
+    histo_path_mc = histo_path
+    histo_path_data = histo_path.replace(syst, "Central")
+
+
     for key, config in sorted(plotConfigs.items()):
+        if key == '0':  # For DATA, use Central histogram path regardless of syst
+            histo_path = histo_path_data
+        else:  # For MC, use the provided syst in the histogram path
+            histo_path = histo_path_mc
         print(f"  > Processing sample group: {config['legend']}")
         names = config['name']
         
@@ -71,6 +101,7 @@ def get_plots_from_files(histo_path):
                 continue
                 
             h_temp = infile.Get(histo_path)
+            print(f"{key}, histo_path: {histo_path}")
             if not h_temp:
                 print(f"Warning: Histogram {histo_path} not found in {file_name}")
                 infile.Close()
@@ -208,20 +239,22 @@ def draw_stack_with_ratio(histos, colors, labels, htotal_prediction, label, out_
 if __name__ == "__main__":
     print("Starting Histogram Processing...")
     
-    for path in HIST_PATHS:
-        print(f"\n--- Processing {path} ---")
-        histos, colors, labels, htotal = get_plots_from_files(path)
-        
-        hist_name = path.split("/")[-1]
-        out_name = f"{hist_name}_plot.png"
-        
-        # cutflow의 경우 y축 값의 차이가 크므로 Log scale을 적용하는 것이 좋습니다.
-        is_log_scale = True if "cutflow" in hist_name else False
-        
-        draw_stack_with_ratio(
-            histos, colors, labels, htotal, 
-            label="Single Muon", 
-            out_name=out_name,
-            is_log=is_log_scale
-        )
-        print(f"Saved successfully: {out_name}")
+    for syst in SYSTEMATICS:
+        for path in HIST_PATHS:
+            path = path.replace("Central", syst)
+            print(f"\n--- Processing {path} ---")
+            histos, colors, labels, htotal = get_plots_from_files(path, syst)
+
+            hist_name = path.split("/")[-2]+ "_"+path.split("/")[-1]
+            out_name = f"{hist_name}_plot.png"
+
+            # cutflow의 경우 y축 값의 차이가 크므로 Log scale을 적용하는 것이 좋습니다.
+            is_log_scale = True if "cutflow" in hist_name else False
+
+            draw_stack_with_ratio(
+                histos, colors, labels, htotal, 
+                label="Single Muon", 
+                out_name=out_name,
+                is_log=is_log_scale
+            )
+            print(f"Saved successfully: {out_name}")

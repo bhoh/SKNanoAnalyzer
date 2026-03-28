@@ -1,0 +1,3 @@
+systematics:
+  - syst: JESTotal
+    evtLoopAgain: true
