@@ -12,7 +12,7 @@ Tutorial_reco_tt::~Tutorial_reco_tt() {}
 
 void Tutorial_reco_tt::initializeAnalyzer() {
 
-  MuonIDs = { Muon::MuonID::POG_TIGHT };
+  MuonIDs = { Muon::MuonID::POG_TIGHT_PFISO_TIGHT };
   MuonIDISOSFKeys = { "NUM_TightID_DEN_TrackerMuons", "NUM_TightPFIso_DEN_TightID" };
 
   if (DataEra == "2016preVFP" || DataEra == "2016postVFP" ||
@@ -59,6 +59,8 @@ void Tutorial_reco_tt::executeEvent() {
   AllMuonViews = GetAllMuonViews();
   AllElectronViews = GetAllElectronViews();
   AllJetViews = GetAllJetViews();
+  AllGenViews = GetAllGenViews();
+  AllGenJetViews = GetAllGenJetViews();
 
   ev = GetEvent();
 
@@ -100,18 +102,22 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   //==== Jet Selection
   MyCorrection::variation jes_variation = MyCorrection::variation::nom;
+  MyCorrection::variation btag_jes_variation = MyCorrection::variation::nom;
+  TString btag_source = "total";
   if (this_syst.Contains("JESTotal")) {
     ApplyJetScaleVariation(AllJetViews, "total");
     if (this_syst.Contains("Up")) {
       jes_variation = MyCorrection::variation::up;
+      btag_jes_variation = MyCorrection::variation::nom;
+      btag_source = "total";
     } else if (this_syst.Contains("Down")) {
       jes_variation = MyCorrection::variation::down;
+      btag_jes_variation = MyCorrection::variation::nom;
+      btag_source = "total";
     }
   }
   std::vector<size_t> SelectedJetIndices = SelectJetIndices(AllJetViews, Jet::JetID::TIGHT, 30., 2.4, jes_variation, MyCorrection::variation::nom);
   RVec<Jet> jets = MaterializeJets(AllJetViews, SelectedJetIndices, jes_variation, MyCorrection::variation::nom);
-  
-  // Veto Lepton in Jets
   jets = JetsVetoLeptonInside(jets, electrons, muons, 0.3);
 
   //==== Sorting
@@ -120,9 +126,10 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   //==== Event selections
   if (muons.size() != 1) return;
+  if (electrons.size() != 0) return;
   if (muons.at(0).Pt() <= TriggerSafePtCut) return;
   if (jets.size() < 4) return;
-  if (METv.Pt() <= 20) return;
+  //if (METv.Pt() <= 20) return;
   FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 1.5, 1., 6, 0., 6.);
 
   if (!PassJetVetoMap(AllJetViews, AllMuonViews, "jetvetomap_fpix")) return;
@@ -162,10 +169,69 @@ void Tutorial_reco_tt::executeEventFromParameter() {
             JetTagging::JetFlavTagger::ParT, 
             JetTagging::JetFlavTaggerWP::Medium,
             JetTagging::JetTaggingSFMethod::comb,
-            MyCorrection::variation::nom
+            btag_jes_variation, btag_source
         );
     weight *= btag_sf;
 
+    if (MCSample.Contains("TT")) {
+      auto [firstTopIdx, firstAntiTopIdx, lastTopIdx, lastAntiTopIdx] =
+          GetTopAndAntiTopIndices(AllGenViews);
+
+      const TLorentzVector top = AllGenViews[firstTopIdx].P4();
+      const TLorentzVector antiTop = AllGenViews[firstAntiTopIdx].P4();
+      float w_toppt = myCorr->GetTopPtReweight(top, antiTop);
+      weight *= w_toppt;
+
+      auto [topIdx, WTopIdx, BHadTopIdx, antiTopIdx, WAntiTopIdx,
+          BHadAntiTopIdx] = myCorr->GetGenIdxofTopDecayProducts(AllGenViews);
+      float weight_bfrag = 1.f;
+      float weight_bfrag_up = 1.f;
+      float xb = -1.f;
+      float xb_anti = -1.f;
+      if ((BHadTopIdx == std::numeric_limits<std::size_t>::max()) ||
+          (BHadAntiTopIdx == std::numeric_limits<std::size_t>::max())) {
+        weight_bfrag = -1.f;
+        weight_bfrag_up = -1.f;
+      } else {
+        auto LastCopyTop = AllGenViews[topIdx].P4();
+        auto LastCopyAntiTop = AllGenViews[antiTopIdx].P4();
+        auto LastCopyWPlus = AllGenViews[WTopIdx].P4();
+        auto LastCopyWMinus = AllGenViews[WAntiTopIdx].P4();
+        auto FirstCopyAntiTopBHad = AllGenViews[BHadAntiTopIdx].P4();
+        auto FirstCopyTopBHad = AllGenViews[BHadTopIdx].P4();
+
+        const float x_e_top =
+            2 * FirstCopyTopBHad * LastCopyTop / LastCopyTop.M2();
+        const float x_e_antitop =
+            2 * FirstCopyAntiTopBHad * LastCopyAntiTop / LastCopyAntiTop.M2();
+        const float w_top = LastCopyWPlus.M2() / LastCopyTop.M2();
+        const float w_antitop = LastCopyWMinus.M2() / LastCopyAntiTop.M2();
+        const float clip_value = 1.2f;
+        const float x_b_top = std::min(x_e_top / (1 - w_top), clip_value);
+        const float x_b_antitop =
+            std::min(x_e_antitop / (1 - w_antitop), clip_value);
+        xb = x_b_top;
+        xb_anti = x_b_antitop;
+
+        weight_bfrag = myCorr->GetBFragReweight(
+            LastCopyTop, LastCopyAntiTop, LastCopyWPlus, LastCopyWMinus,
+            FirstCopyTopBHad, FirstCopyAntiTopBHad, MyCorrection::variation::nom);
+        weight_bfrag_up = myCorr->GetBFragReweight(
+            LastCopyTop, LastCopyAntiTop, LastCopyWPlus, LastCopyWMinus,
+            FirstCopyTopBHad, FirstCopyAntiTopBHad, MyCorrection::variation::up);
+      }
+      weight *= weight_bfrag;
+    }
+
+  }
+
+  unordered_map<int, int> matched_genjet_idx = GenJetMatching(jets, MaterializeGenJets(AllGenJetViews), Rho_fixedGridRhoFastjetAll);
+  bool isPileupJet = false;
+  for (auto &[reco_idx, gen_idx] : matched_genjet_idx) {
+    if (gen_idx == -999) {
+      isPileupJet = true;
+      break;
+    }
   }
 
   float muon_pt0 = muons.at(0).Pt();
@@ -178,10 +244,40 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   FillHist(this_syst + "/baseLineCut/muon_pt0_" + this_syst, muon_pt0, weight, 80, 0., 400.);
   FillHist(this_syst + "/baseLineCut/muon_eta0_" + this_syst, muon_eta0, weight, 40, -2.4, 2.4);
   FillHist(this_syst + "/baseLineCut/njets_" + this_syst, njets, weight, 10, 0., 10.);
+
+
+  std::vector<size_t> SelectedJetIndices2 = SelectJetIndices(AllJetViews, Jet::JetID::TIGHT, 40., 2.4, jes_variation, MyCorrection::variation::nom);
+  RVec<Jet> jets2 = MaterializeJets(AllJetViews, SelectedJetIndices2, jes_variation, MyCorrection::variation::nom);
+  jets2 = JetsVetoLeptonInside(jets2, electrons, muons, 0.3);
+  FillHist(this_syst + "/baseLineCut/njets2_" + this_syst, float(jets2.size()), weight, 10, 0., 10.);
   FillHist(this_syst + "/baseLineCut/jet_pt0_" + this_syst, jet_pt0, weight, 80, 0., 400.);
   FillHist(this_syst + "/baseLineCut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -2.4, 2.4);
   FillHist(this_syst + "/baseLineCut/MET_pt_" + this_syst, MET_pt, weight, 40, 0., 200.);
   FillHist(this_syst + "/baseLineCut/MET_phi_" + this_syst, MET_phi, weight, 40, -3.14, 3.14);
+
+  if (!IsDATA) {
+    if(isPileupJet){
+      FillHist("Pileup/" + this_syst + "/baseLineCut/muon_pt0_" + this_syst, muon_pt0, weight, 80, 0., 400.);
+      FillHist("Pileup/" + this_syst + "/baseLineCut/muon_eta0_" + this_syst, muon_eta0, weight, 40, -2.4, 2.4);
+      FillHist("Pileup/" + this_syst + "/baseLineCut/njets_" + this_syst, njets, weight, 10, 0., 10.);
+      FillHist("Pileup/" + this_syst + "/baseLineCut/njets2_" + this_syst, float(jets2.size()), weight, 10, 0., 10.);
+      FillHist("Pileup/" + this_syst + "/baseLineCut/jet_pt0_" + this_syst, jet_pt0, weight, 80, 0., 400.);
+      FillHist("Pileup/" + this_syst + "/baseLineCut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -2.4, 2.4);
+      FillHist("Pileup/" + this_syst + "/baseLineCut/MET_pt_" + this_syst, MET_pt, weight, 40, 0., 200.);
+      FillHist("Pileup/" + this_syst + "/baseLineCut/MET_phi_" + this_syst, MET_phi, weight, 40, -3.14, 3.14); 
+    }
+    else{
+      FillHist("noPileup/" + this_syst + "/baseLineCut/muon_pt0_" + this_syst, muon_pt0, weight, 80, 0., 400.);
+      FillHist("noPileup/" + this_syst + "/baseLineCut/muon_eta0_" + this_syst, muon_eta0, weight, 40, -2.4, 2.4);
+      FillHist("noPileup/" + this_syst + "/baseLineCut/njets_" + this_syst, njets, weight, 10, 0., 10.);
+      FillHist("noPileup/" + this_syst + "/baseLineCut/njets2_" + this_syst, float(jets2.size()), weight, 10, 0., 10.);
+      FillHist("noPileup/" + this_syst + "/baseLineCut/jet_pt0_" + this_syst, jet_pt0, weight, 80, 0., 400.);
+      FillHist("noPileup/" + this_syst + "/baseLineCut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -2.4, 2.4);
+      FillHist("noPileup/" + this_syst + "/baseLineCut/MET_pt_" + this_syst, MET_pt, weight, 40, 0., 200.);
+      FillHist("noPileup/" + this_syst + "/baseLineCut/MET_phi_" + this_syst, MET_phi, weight, 40, -3.14, 3.14); 
+     
+    }
+  }
 
 
   //==== Take leading four jets in pT
@@ -242,6 +338,16 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   FillHist(this_syst + "/Chi2Cut/lep_W_mass_" + this_syst, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
   FillHist(this_syst + "/Chi2Cut/lep_top_mass_" + this_syst, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
   FillHist(this_syst + "/Chi2Cut/chi2_" + this_syst, best_combinatoric->best_chi2, weight, 50, 0., 2000.);
+
+  FillHist(this_syst + "/Chi2Cut/muon_pt0_" + this_syst, muon_pt0, weight, 80, 0., 400.);
+  FillHist(this_syst + "/Chi2Cut/muon_eta0_" + this_syst, muon_eta0, weight, 40, -2.4, 2.4);
+  FillHist(this_syst + "/Chi2Cut/njets_" + this_syst, njets, weight, 10, 0., 10.);
+  FillHist(this_syst + "/Chi2Cut/njets2_" + this_syst, float(jets2.size()), weight, 10, 0., 10.);
+  FillHist(this_syst + "/Chi2Cut/jet_pt0_" + this_syst, jet_pt0, weight, 80, 0., 400.);
+  FillHist(this_syst + "/Chi2Cut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -2.4, 2.4);
+  FillHist(this_syst + "/Chi2Cut/MET_pt_" + this_syst, MET_pt, weight, 40, 0., 200.);
+  FillHist(this_syst + "/Chi2Cut/MET_phi_" + this_syst, MET_phi, weight, 40, -3.14, 3.14);
+
 }
 
 void Tutorial_reco_tt::EvalChi2(ttCombinatoric& tt_combinatoric) {
@@ -314,4 +420,61 @@ void Tutorial_reco_tt::ttCombinatoric::EvalLeptonicPart() {
     lep_W_mass  .push_back(lep_W_vector.M());
     lep_top_mass.push_back(lep_top_vector.M());
   }
+}
+
+array<size_t, 4> Tutorial_reco_tt::GetTopAndAntiTopIndices(const GenViewCollection &gens) {
+  constexpr size_t npos = std::numeric_limits<size_t>::max();
+
+  size_t FirstCopyTopIndex = npos;
+  size_t FirstCopyAntiTopIndex = npos;
+  size_t LastCopyTopIndex = npos;
+  size_t LastCopyAntiTopIndex = npos;
+
+  const size_t n = gens.size();
+
+  constexpr unsigned long FIRST_COPY_BIT = 1UL << 12;
+  constexpr unsigned long LAST_COPY_BIT = 1UL << 13;
+
+  for (size_t idx = 0; idx < n; ++idx) {
+    const GenView &gen = gens[idx];
+
+    const int pdg = gen.PdgId();
+    const auto flags = gen.StatusFlags();
+
+    const bool isFirstCopy = (flags & FIRST_COPY_BIT) != 0;
+    const bool isLastCopy = (flags & LAST_COPY_BIT) != 0;
+
+    if (pdg == 6) { // top
+      if (isFirstCopy) {
+        assert(FirstCopyTopIndex == npos &&
+               "Multiple first-copy tops found in event");
+        FirstCopyTopIndex = idx;
+      }
+      if (isLastCopy) {
+        assert(LastCopyTopIndex == npos &&
+               "Multiple last-copy tops found in event");
+        LastCopyTopIndex = idx;
+      }
+    } else if (pdg == -6) { // anti-top
+      if (isFirstCopy) {
+        assert(FirstCopyAntiTopIndex == npos &&
+               "Multiple first-copy antitops found in event");
+        FirstCopyAntiTopIndex = idx;
+      }
+      if (isLastCopy) {
+        assert(LastCopyAntiTopIndex == npos &&
+               "Multiple last-copy antitops found in event");
+        LastCopyAntiTopIndex = idx;
+      }
+    }
+  }
+
+  assert(FirstCopyTopIndex != npos && "No first-copy top found in event");
+  assert(FirstCopyAntiTopIndex != npos &&
+         "No first-copy antitop found in event");
+  assert(LastCopyTopIndex != npos && "No last-copy top found in event");
+  assert(LastCopyAntiTopIndex != npos && "No last-copy antitop found in event");
+
+  return {FirstCopyTopIndex, FirstCopyAntiTopIndex, LastCopyTopIndex,
+          LastCopyAntiTopIndex};
 }

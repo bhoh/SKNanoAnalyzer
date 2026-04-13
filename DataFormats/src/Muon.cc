@@ -449,6 +449,8 @@ bool Muon::PassID(const MuonID ID) const {
             return SoftMvaRun3() > 0.63;
         case MuonID::POG_SOFTMVA_RUN3_VLOOSE:
             return SoftMvaRun3() > 0.47;
+        case MuonID::POG_TIGHT_PFISO_TIGHT:
+            return isPOGTightId() && (static_cast<int>(PfIsoId()) >= static_cast<int>(WorkingPoint::TIGHT));
         default:
             throw std::runtime_error("[Muon::PassID] MuonID not implemented.");
     }

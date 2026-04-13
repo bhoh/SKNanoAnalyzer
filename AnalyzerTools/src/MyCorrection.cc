@@ -1092,6 +1092,7 @@ float MyCorrection::GetBTaggingSF(const RVec<Jet> &jets,
       const bool is_heavy = flavours[idx] == 5 || flavours[idx] == 4;
       auto this_cset = is_heavy ? cset : cset_light;
       const int flav = is_heavy ? flavours[idx] : 0;
+      //XXX up_jes, down_jes not supported for light jet
       const float sf =
           safeEvaluate(this_cset, "GetBTaggingSF",
                        {syst_str, this_wpStr, flav, absEtas[idx], pts[idx]});

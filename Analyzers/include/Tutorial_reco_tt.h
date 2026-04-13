@@ -28,11 +28,15 @@ public:
   MuonViewCollection AllMuonViews;
   ElectronViewCollection AllElectronViews;
   JetViewCollection AllJetViews;
+  GenViewCollection AllGenViews;
+  GenJetViewCollection AllGenJetViews;
 
   Event ev;
   float weight_Prefire;
 
   unique_ptr<SystematicHelper> systHelper;
+
+  array<std::size_t, 4> GetTopAndAntiTopIndices(const GenViewCollection &gens);
 
   Tutorial_reco_tt();
   ~Tutorial_reco_tt();

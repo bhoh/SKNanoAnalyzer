@@ -80,6 +80,8 @@ bool MuonView::PassID(MuonID id) const {
         return SoftMvaRun3() > 0.63;
     case MuonID::POG_SOFTMVA_RUN3_VLOOSE:
         return SoftMvaRun3() > 0.47;
+    case MuonID::POG_TIGHT_PFISO_TIGHT:
+        return isPOGTightId() && workingPointAtLeast(store->pfIsoId, WorkingPoint::TIGHT);
     default:
         break;
     }
