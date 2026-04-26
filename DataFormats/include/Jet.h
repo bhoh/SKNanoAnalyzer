@@ -210,6 +210,10 @@ public:
   float GetTaggerResult(JetTagging::JetFlavTagger tagger, JetTagging::JetFlavTaggerScoreType) const;
   TLorentzVector GetUnsmearedP4() const;
 
+  float UParTAK4RegPtRawCorr() const { return j_UParTAK4RegPtRawCorr; }
+  float UParTAK4RegPtRawCorrNeutrino() const { return j_UParTAK4RegPtRawCorrNeutrino; }
+  float PuIdDisc() const { return j_puIDScore; }
+
 private:
   void ensure(Property property) const;
   void markLoaded(Property property) const;

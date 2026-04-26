@@ -45,9 +45,9 @@ bool MuonView::PassID(MuonID id) const {
     case MuonID::POG_MULTISO_MEDIUM:
         return workingPointAtLeast(store->multiIsoId, WorkingPoint::MEDIUM);
     case MuonID::POG_MVA_MU_MEDIUM:
-        return workingPointAtLeast(store->mvaMuId, WorkingPoint::MEDIUM);
+        return workingPointAtLeast(store->mvaMuId, static_cast<WorkingPoint>(1)); // (1=MVAIDwpMedium,2=MVAIDwpTight)
     case MuonID::POG_MVA_MU_TIGHT:
-        return workingPointAtLeast(store->mvaMuId, WorkingPoint::TIGHT);
+        return workingPointAtLeast(store->mvaMuId, static_cast<WorkingPoint>(2)); //(1=MVAIDwpMedium,2=MVAIDwpTight)
     case MuonID::POG_PFISO_VLOOSE:
         return workingPointAtLeast(store->pfIsoId, WorkingPoint::VLOOSE);
     case MuonID::POG_PFISO_LOOSE:
@@ -122,9 +122,9 @@ bool MuonView::PassID(const TString &id) const {
     if (id == "POGMultiIsoMedium")
         return workingPointAtLeast(store->multiIsoId, WorkingPoint::MEDIUM);
     if (id == "POGMvaMuMedium")
-        return workingPointAtLeast(store->mvaMuId, WorkingPoint::MEDIUM);
+        return workingPointAtLeast(store->mvaMuId, static_cast<WorkingPoint>(1)); //(1=MVAIDwpMedium,2=MVAIDwpTight)
     if (id == "POGMvaMuTight")
-        return workingPointAtLeast(store->mvaMuId, WorkingPoint::TIGHT);
+        return workingPointAtLeast(store->mvaMuId, static_cast<WorkingPoint>(2)); //(1=MVAIDwpMedium,2=MVAIDwpTight)
     if (id == "POGPfIsoVLoose")
         return workingPointAtLeast(store->pfIsoId, WorkingPoint::VLOOSE);
     if (id == "POGPfIsoLoose")

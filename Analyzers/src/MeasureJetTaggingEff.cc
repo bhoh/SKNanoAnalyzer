@@ -56,6 +56,7 @@ void MeasureJetTaggingEff::executeEvent() {
   AllMuonViews = GetAllMuonViews();
   AllElectronViews = GetAllElectronViews();
   AllJetViews = GetAllJetViews();
+  AllGenJetViews = GetAllGenJetViews();
 
   ev = GetEvent();
 
@@ -101,7 +102,7 @@ void MeasureJetTaggingEff::executeEventFromParameter() {
 
   //==== B-Tagging Efficiency Setup
   // Define binning for abseta and pt using RVec
-  const RVec<float> abseta_bins = {0., 0.8, 1.6, 2.5};
+  const RVec<float> abseta_bins = {0., 2.5};
   const RVec<float> pt_bins = {20., 30., 50., 70., 100., 140., 200., 300., 600., 1000.};
 
   // Event weight
@@ -116,8 +117,16 @@ void MeasureJetTaggingEff::executeEventFromParameter() {
       {"XXT", WP_SuperTight}
   };
 
+  unordered_map<int, int> matched_genjet_idx = GenJetMatching(jets, MaterializeGenJets(AllGenJetViews), Rho_fixedGridRhoFastjetAll);
+
   //==== Loop over all selected jets to fill efficiency histograms
   for (unsigned int ij = 0; ij < jets.size(); ij++) {
+
+    // Skip pileup jet
+    if (matched_genjet_idx.find(ij) == matched_genjet_idx.end() || matched_genjet_idx[ij] == -999) {
+        continue;
+    }
+
     float pt = jets.at(ij).Pt();
     float abseta = std::abs(jets.at(ij).Eta());
     int flavor = jets.at(ij).hadronFlavour();

@@ -21,6 +21,7 @@ public:
   MuonViewCollection AllMuonViews;
   ElectronViewCollection AllElectronViews;
   JetViewCollection AllJetViews;
+  GenJetViewCollection AllGenJetViews;
 
   Event ev;
   float weight_Prefire;

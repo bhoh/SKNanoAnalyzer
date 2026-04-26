@@ -1343,6 +1343,8 @@ float MyCorrection::GetPileupJetIDSF(const RVec<Jet> &jets,
 bool MyCorrection::PassJetID(const Jet &jet, const Jet::JetID &id) const {
   correction::Correction::Ref cset = nullptr;
   float out;
+  float puid_score = 1;
+  float puid_WP = -1;
   switch (id) {
   case Jet::JetID::TIGHT:
     cset = cset_jetid->at("AK4PUPPI_Tight");
@@ -1363,8 +1365,34 @@ bool MyCorrection::PassJetID(const Jet &jet, const Jet::JetID &id) const {
     return out > 0.5; // return is real
     break;
   case Jet::JetID::PUID_LOOSE:
-    return true;
-  //[NOT_IMPLEMENTED]
+    puid_score = jet.PuIdDisc();
+    // WP definition for |eta| < 2.5
+    if (jet.Pt() < 10){
+      puid_WP = -1;
+    }
+    else if (jet.Pt() < 20){
+      puid_WP = -0.51;
+    }
+    else if (jet.Pt() < 30){
+      puid_WP = -0.72;
+    }
+    else if (jet.Pt() < 40){
+      puid_WP = -0.60;
+    }
+    else if (jet.Pt() < 50){
+      puid_WP = -0.40;
+    }
+    else{
+      puid_WP = -1;
+    }
+    cset = cset_jetid->at("AK4PUPPI_Tight");
+    out = cset->evaluate(
+        {fabs(jet.Eta()), jet.chHEF(), jet.neHEF(), jet.chEmEF(), jet.neEmEF(),
+         jet.muEF(), static_cast<int>(jet.chMultiplicity()),
+         static_cast<int>(jet.neMultiplicity()),
+         static_cast<int>(jet.chMultiplicity() + jet.neMultiplicity())});
+    return ((out > 0.5) && (puid_score > puid_WP)); // return is real
+    break;
   case Jet::JetID::PUID_MEDIUM:
     return true;
   case Jet::JetID::PUID_TIGHT:
@@ -1381,6 +1409,8 @@ bool MyCorrection::PassJetID(const Jet &jet, const Jet::JetID &id) const {
 bool MyCorrection::PassJetID(const JetView &jet, const Jet::JetID &id) const {
   correction::Correction::Ref cset = nullptr;
   float out = 0.f;
+  float puid_score = 1;
+  float puid_WP = -1;
   switch (id) {
   case Jet::JetID::TIGHT:
     cset = cset_jetid->at("AK4PUPPI_Tight");
@@ -1398,6 +1428,36 @@ bool MyCorrection::PassJetID(const JetView &jet, const Jet::JetID &id) const {
          static_cast<int>(jet.NeMultiplicity()),
          static_cast<int>(jet.ChMultiplicity() + jet.NeMultiplicity())});
     return out > 0.5;
+  case Jet::JetID::PUID_LOOSE:
+    puid_score = jet.PuIdDisc();
+    // WP definition for |eta| < 2.5
+    if (jet.Pt() < 10){
+      puid_WP = -1;
+    }
+    else if (jet.Pt() < 20){
+      puid_WP = -0.51;
+    }
+    else if (jet.Pt() < 30){
+      puid_WP = -0.72;
+    }
+    else if (jet.Pt() < 40){
+      puid_WP = -0.60;
+    }
+    else if (jet.Pt() < 50){
+      puid_WP = -0.40;
+    }
+    else{
+      puid_WP = -1;
+    }
+    cset = cset_jetid->at("AK4PUPPI_Tight");
+    out = cset->evaluate(
+        {fabs(jet.Eta()), jet.ChHEF(), jet.NeHEF(), jet.ChEmEF(), jet.NeEmEF(),
+         jet.MuEF(), static_cast<int>(jet.ChMultiplicity()),
+         static_cast<int>(jet.NeMultiplicity()),
+         static_cast<int>(jet.ChMultiplicity() + jet.NeMultiplicity())});
+    return ((out > 0.5) && (puid_score > puid_WP)); // return is real
+    break;
+
   case Jet::JetID::NOCUT:
     return true;
   default:
