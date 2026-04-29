@@ -79,11 +79,24 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   bool draw_include_pu_jets = false;
   bool correct_b_jet_pt = true;
   bool apply_pu_id = false;
-  bool use_pog_tight_muon_id = false;
-  bool use_pog_mva_tight_muon_id = true;
+  bool use_pog_tight_muon_id = false; // if not use medium prompt ID
+  bool use_pog_mva_tight_muon_id = false;
+  bool eval_top_pt_reweight_normalization = false;
 
   const TString this_syst = systHelper->getCurrentSysName();
   if (IsDATA && this_syst != "Central") return;
+
+  if(eval_top_pt_reweight_normalization && MCSample.Contains("TT") && this_syst == "Central") {
+    auto [firstTopIdx, firstAntiTopIdx, lastTopIdx, lastAntiTopIdx] =
+    GetTopAndAntiTopIndices(AllGenViews);
+
+    const TLorentzVector top = AllGenViews[firstTopIdx].P4();
+    const TLorentzVector antiTop = AllGenViews[firstAntiTopIdx].P4();
+    float w_toppt = myCorr->GetTopPtReweight(top, antiTop);
+    FillHist(this_syst + "/count/w_toppt" + this_syst, 0.5, 1., 2, 0., 2.);
+    FillHist(this_syst + "/count/w_toppt" + this_syst, 1.5, w_toppt, 2, 0., 2.);
+  }
+
 
   Muon::MuonID this_muon_id = MuonIDs[0];
   TString this_muon_id_sf_key = MuonIDISOSFKeys[0];
@@ -145,7 +158,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     }
   }
   auto jet_id = apply_pu_id ? Jet::JetID::PUID_LOOSE : Jet::JetID::TIGHT;
-  std::vector<size_t> SelectedJetIndices = SelectJetIndices(AllJetViews, jet_id, 30., 2.4, jes_variation, MyCorrection::variation::nom);
+  std::vector<size_t> SelectedJetIndices = SelectJetIndices(AllJetViews, jet_id, 20., 2.4, jes_variation, MyCorrection::variation::nom);
   RVec<Jet> jets = MaterializeJets(AllJetViews, SelectedJetIndices, jes_variation, MyCorrection::variation::nom);
   jets = JetsVetoLeptonInside(jets, electrons, muons, 0.3);
 
@@ -157,7 +170,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   if (muons.size() != 1) return;
   if (electrons.size() != 0) return;
   if (muons.at(0).Pt() <= TriggerSafePtCut) return;
-  if (jets.size() < 4) return;
+  if (jets.size() < 6) return;
   //if (METv.Pt() <= 20) return;
   FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 1.5, 1., 6, 0., 6.);
 
@@ -166,6 +179,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   //==== B-Tagging (DeepJet Medium WP example)
   int NBJets = 0;
+  int njets_pt30_non_btagged = 0;
   float btag_wp_cut = myCorr->GetBTaggingWP(); 
   std::vector<bool> btag_vector;
 
@@ -174,15 +188,21 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     if (this_discr > btag_wp_cut) {
       NBJets++;
       btag_vector.push_back(true);
+      njets_pt30_non_btagged++;
     } else {
       btag_vector.push_back(false);
+      if (jets.at(ij).Pt() > 30){
+        njets_pt30_non_btagged++;
+      }
     }
   }
 
 
 
 
-  if (NBJets != 2) return;
+
+  if (NBJets != 3) return;
+  if (njets_pt30_non_btagged < 6) return;
   FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 3.5, 1., 6, 0., 6.);
 
   //==== Event Weight
@@ -218,7 +238,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
       const TLorentzVector top = AllGenViews[firstTopIdx].P4();
       const TLorentzVector antiTop = AllGenViews[firstAntiTopIdx].P4();
       float w_toppt = myCorr->GetTopPtReweight(top, antiTop);
-      weight *= w_toppt;
+      weight *= w_toppt * 1.2360; // 1.2360 for top_pt_reweight normalization correction
 
       auto [topIdx, WTopIdx, BHadTopIdx, antiTopIdx, WAntiTopIdx,
           BHadAntiTopIdx] = myCorr->GetGenIdxofTopDecayProducts(AllGenViews);
@@ -258,7 +278,14 @@ void Tutorial_reco_tt::executeEventFromParameter() {
             LastCopyTop, LastCopyAntiTop, LastCopyWPlus, LastCopyWMinus,
             FirstCopyTopBHad, FirstCopyAntiTopBHad, MyCorrection::variation::up);
       }
-      weight *= weight_bfrag;
+      //weight *= weight_bfrag;
+
+      if(genTtbarId%100>=51 && genTtbarId%100<=55){
+        weight *= 1.36;
+      }
+      else if(genTtbarId%100>=41 && genTtbarId%100<=45){
+        weight *= 1.11;
+      }
     }
 
   }
@@ -329,7 +356,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   float muon_eta0 = muons.at(0).Eta();
   float jet_pt0 = jets.at(0).Pt();
   float jet_eta0 = jets.at(0).Eta();
-  float njets = float(jets.size());
+  float njets = njets_pt30_non_btagged;
   float MET_pt = METv.Pt();
   float MET_phi = METv.Phi();
   FillHist(this_syst + "/baseLineCut/muon_pt0_" + this_syst, muon_pt0, weight, 80, 0., 400.);
@@ -371,48 +398,59 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   }
 
 
-  //==== Take leading four jets in pT
+//==== Take leading five jets in pT
   std::vector<unsigned int> top_b_jet_candidates;
   std::vector<unsigned int> had_W_candidates;
 
-  for(unsigned int ij(0); ij < 4; ij++){
+  // Check up to the leading 5 jets
+  for(unsigned int ij(0); ij < 5; ij++){
     if(btag_vector.at(ij)){
+      // We still need exactly 2 b-jets for the ttbar system
       if(top_b_jet_candidates.size() < 2) top_b_jet_candidates.push_back(ij);
-    } else {
-      if(had_W_candidates.size() < 2) had_W_candidates.push_back(ij);
+      // allow soft b-tagged jet for mistag c (W -> cs)
+      else if(top_b_jet_candidates.size() >= 2) had_W_candidates.push_back(ij);
+    }
+    else{
+      // Expanded to keep up to 3 hadronic W jet candidates
+      if(had_W_candidates.size() < 3) had_W_candidates.push_back(ij);
     }
   }
 
+  // Require at least 3 had_W candidates and 2 top_b candidates
   if(had_W_candidates.size() < 2 || top_b_jet_candidates.size() < 2) return;
   FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 4.5, 1., 6, 0., 6.);
 
   //==== Combinatorics
-  Tutorial_reco_tt::ttCombinatoric tt_combinatoric_1, tt_combinatoric_2;
+  // Array to hold the 6 combinations: 3C2 (W jets) * 2P2 (b jets) = 6
+  Tutorial_reco_tt::ttCombinatoric combinatorics[6];
+  int comb_idx = 0;
 
-  tt_combinatoric_1.lepton            = &(muons.at(0));
-  tt_combinatoric_1.jets              = &jets;
-  tt_combinatoric_1.met               = &METv;
-  tt_combinatoric_1.had_W_jet_idx_1   = had_W_candidates.at(0);
-  tt_combinatoric_1.had_W_jet_idx_2   = had_W_candidates.at(1);
-  tt_combinatoric_1.had_top_b_jet_idx = top_b_jet_candidates.at(0);
-  tt_combinatoric_1.lep_top_b_jet_idx = top_b_jet_candidates.at(1);
+  // Loop over the 3 ways to choose 2 W jets out of the 3 candidates: (0,1), (0,2), (1,2)
+  for(unsigned int w1 = 0; w1 < had_W_candidates.size()-1; w1++){
+    for(unsigned int w2 = w1 + 1; w2 < had_W_candidates.size(); w2++){
+      // Loop over the 2 ways to assign the b-jets (hadronic vs leptonic)
+      for(unsigned int b_idx = 0; b_idx < 2; b_idx++){
+        combinatorics[comb_idx].lepton            = &(muons.at(0));
+        combinatorics[comb_idx].jets              = &jets;
+        combinatorics[comb_idx].met               = &METv;
+        combinatorics[comb_idx].had_W_jet_idx_1   = had_W_candidates.at(w1);
+        combinatorics[comb_idx].had_W_jet_idx_2   = had_W_candidates.at(w2);
+        combinatorics[comb_idx].had_top_b_jet_idx = top_b_jet_candidates.at(b_idx);
+        combinatorics[comb_idx].lep_top_b_jet_idx = top_b_jet_candidates.at(1 - b_idx);
 
-  tt_combinatoric_2.lepton            = &(muons.at(0));
-  tt_combinatoric_2.jets              = &jets;
-  tt_combinatoric_2.met               = &METv;
-  tt_combinatoric_2.had_W_jet_idx_1   = had_W_candidates.at(0);
-  tt_combinatoric_2.had_W_jet_idx_2   = had_W_candidates.at(1);
-  tt_combinatoric_2.had_top_b_jet_idx = top_b_jet_candidates.at(1);
-  tt_combinatoric_2.lep_top_b_jet_idx = top_b_jet_candidates.at(0);
+        // Evaluate Chi2 for this specific combination
+        this->EvalChi2(combinatorics[comb_idx]);
+        comb_idx++;
+      }
+    }
+  }
 
-  this->EvalChi2(tt_combinatoric_1);
-  this->EvalChi2(tt_combinatoric_2);
-
-  Tutorial_reco_tt::ttCombinatoric* best_combinatoric;
-  if(tt_combinatoric_1.best_chi2 < tt_combinatoric_2.best_chi2){
-    best_combinatoric = &tt_combinatoric_1;
-  } else {
-    best_combinatoric = &tt_combinatoric_2;
+  //==== Find the best combinatoric based on the minimum chi2
+  Tutorial_reco_tt::ttCombinatoric* best_combinatoric = &combinatorics[0];
+  for(unsigned int i = 1; i < 6; i++){
+    if(combinatorics[i].best_chi2 < best_combinatoric->best_chi2){
+      best_combinatoric = &combinatorics[i];
+    }
   }
 
   FillHist(this_syst + "/noChi2Cut/had_W_mass_" + this_syst, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
@@ -420,6 +458,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   FillHist(this_syst + "/noChi2Cut/lep_W_mass_" + this_syst, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
   FillHist(this_syst + "/noChi2Cut/lep_top_mass_" + this_syst, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
   FillHist(this_syst + "/noChi2Cut/chi2_" + this_syst, best_combinatoric->best_chi2, weight, 50, 0., 100000.);
+  FillHist(this_syst + "/noChi2Cut/njets_" + this_syst, njets, weight, 10, 0., 10.);
 
   if(best_combinatoric->best_chi2 >= 2e3) return;
   FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 5.5, 1., 6, 0., 6.);
