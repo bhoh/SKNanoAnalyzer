@@ -652,6 +652,23 @@
         "sumsign": 91953615.0,
         "sumW": 32116997677.263794
     },
+    "TTW_WtoQQ_1Jets": {
+        "isMC": 1,
+        "PD": "TTW-WtoQQ-1Jets_TuneCP5_13p6TeV_amcatnloFXFXold-pythia8",
+        "xsec": 0.4678,
+        "nmc": 6210301.0,
+        "sumsign": 6210301.0,
+        "sumW": 4623859.090550499
+    },
+    "TTZ_ZtoQQ_1Jets": {
+        "isMC": 1,
+        "PD": "TTZ-ZtoQQ-1Jets_TuneCP5_13p6TeV_amcatnloFXFXold-pythia8",
+        "xsec": 0.6426,
+        "nmc": 4078419.0,
+        "sumsign": 4078419.0,
+        "sumW": 5173266.050202004
+    },
+
     "Muon0": {
         "isMC": 0,
         "periods": [
