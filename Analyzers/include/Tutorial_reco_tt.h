@@ -3,6 +3,7 @@
 
 #include "AnalyzerCore.h"
 #include "SystematicHelper.h"
+#include <algorithm>
 
 class Tutorial_reco_tt : public AnalyzerCore {
 

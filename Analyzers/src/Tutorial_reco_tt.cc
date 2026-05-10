@@ -1,4 +1,5 @@
 #include "Tutorial_reco_tt.h"
+#include "lester_mt2_bisect.h"
 
 Tutorial_reco_tt::Tutorial_reco_tt() :
   const_top_mass(172.5),
@@ -79,7 +80,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   bool draw_include_pu_jets = false;
   bool correct_b_jet_pt = true;
   bool apply_pu_id = false;
-  bool use_pog_tight_muon_id = false; // if not use medium prompt ID
+  bool use_pog_tight_muon_id = true; // if not use medium prompt ID
   bool use_pog_mva_tight_muon_id = false;
   bool eval_top_pt_reweight_normalization = false;
 
@@ -101,6 +102,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   Muon::MuonID this_muon_id = MuonIDs[0];
   TString this_muon_id_sf_key = MuonIDISOSFKeys[0];
   TString this_muon_iso_sf_key = MuonIDISOSFKeys[1];
+  TString this_muon_trig_sf_key = "";
 
   if (use_pog_mva_tight_muon_id) {
     this_muon_id = MuonIDs[2];
@@ -110,6 +112,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     this_muon_id = MuonIDs[0];
     this_muon_id_sf_key = MuonIDISOSFKeys[0];
     this_muon_iso_sf_key = MuonIDISOSFKeys[1];
+    this_muon_trig_sf_key = "NUM_IsoMu24_DEN_CutBasedIdTight_and_PFIsoTight";
   }
   else {
     this_muon_id = MuonIDs[1];
@@ -136,7 +139,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   }
   std::vector<size_t> SelectedElectronIndices = SelectElectronIndices(AllElectronViews, Electron::ElectronID::POG_LOOSE, 15., 2.5);
 
-  if (SelectedMuonIndices.size() + SelectedElectronIndices.size() != 1) return;
+  if (SelectedMuonIndices.size() + SelectedElectronIndices.size() != 2) return;
 
   RVec<Muon> muons = MaterializeMuons(AllMuonViews, SelectedMuonIndices);
   RVec<Electron> electrons = MaterializeElectrons(AllElectronViews, SelectedElectronIndices);
@@ -158,7 +161,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     }
   }
   auto jet_id = apply_pu_id ? Jet::JetID::PUID_LOOSE : Jet::JetID::TIGHT;
-  std::vector<size_t> SelectedJetIndices = SelectJetIndices(AllJetViews, jet_id, 20., 2.4, jes_variation, MyCorrection::variation::nom);
+  std::vector<size_t> SelectedJetIndices = SelectJetIndices(AllJetViews, jet_id, 25., 2.4, jes_variation, MyCorrection::variation::nom);
   RVec<Jet> jets = MaterializeJets(AllJetViews, SelectedJetIndices, jes_variation, MyCorrection::variation::nom);
   jets = JetsVetoLeptonInside(jets, electrons, muons, 0.3);
 
@@ -167,11 +170,18 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   sort(jets.begin(), jets.end(), PtComparing);
 
   //==== Event selections
-  if (muons.size() != 1) return;
+  if (muons.size() != 2) return;
   if (electrons.size() != 0) return;
-  if (muons.at(0).Pt() <= TriggerSafePtCut) return;
-  if (jets.size() < 6) return;
+  if (muons.at(1).Pt() <= TriggerSafePtCut) return;
+  if (jets.size() < 4) return;
   //if (METv.Pt() <= 20) return;
+  //require OS pair
+  if (muons.at(0).Charge() * muons.at(1).Charge() >= 0) return;
+  float mll = (muons.at(0) + muons.at(1)).M();
+  // Z mass window veto
+  if (mll > 76. && mll < 106.) return;
+  // meason resonance veto
+  if (mll < 15.) return;
   FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 1.5, 1., 6, 0., 6.);
 
   if (!PassJetVetoMap(AllJetViews, AllMuonViews, "jetvetomap_fpix")) return;
@@ -202,7 +212,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
 
   if (NBJets != 3) return;
-  if (njets_pt30_non_btagged < 6) return;
+  if (njets_pt30_non_btagged < 4) return;
   FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 3.5, 1., 6, 0., 6.);
 
   //==== Event Weight
@@ -220,6 +230,10 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     else {
       muon_iso_sf = myCorr->GetMuonIDSF(this_muon_iso_sf_key, muons, MyCorrection::variation::nom);
       weight *= muon_iso_sf;
+    }
+    if (use_pog_tight_muon_id) {
+        float muon_trig_sf = myCorr->GetMuonTriggerSF(this_muon_trig_sf_key, muons, MyCorrection::variation::nom);
+        weight *= muon_trig_sf;
     }
     float pu_weight = myCorr->GetPUWeight(ev.nTrueInt(), MyCorrection::variation::nom);
     weight *= pu_weight;
@@ -354,6 +368,9 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   float muon_pt0 = muons.at(0).Pt();
   float muon_eta0 = muons.at(0).Eta();
+  float muon_pt1 = muons.at(1).Pt();
+  float muon_eta1 = muons.at(1).Eta();
+  
   float jet_pt0 = jets.at(0).Pt();
   float jet_eta0 = jets.at(0).Eta();
   float njets = njets_pt30_non_btagged;
@@ -361,7 +378,10 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   float MET_phi = METv.Phi();
   FillHist(this_syst + "/baseLineCut/muon_pt0_" + this_syst, muon_pt0, weight, 80, 0., 400.);
   FillHist(this_syst + "/baseLineCut/muon_eta0_" + this_syst, muon_eta0, weight, 40, -2.4, 2.4);
+  FillHist(this_syst + "/baseLineCut/muon_pt1_" + this_syst, muon_pt1, weight, 80, 0., 400.);
+  FillHist(this_syst + "/baseLineCut/muon_eta1_" + this_syst, muon_eta1, weight, 40, -2.4, 2.4);
   FillHist(this_syst + "/baseLineCut/njets_" + this_syst, njets, weight, 10, 0., 10.);
+  FillHist(this_syst + "/baseLineCut/mll_" + this_syst, mll, weight, 80, 0., 400.);
 
 
   std::vector<size_t> SelectedJetIndices2 = SelectJetIndices(AllJetViews, jet_id, 40., 2.4, jes_variation, MyCorrection::variation::nom);
@@ -372,6 +392,66 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   FillHist(this_syst + "/baseLineCut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -2.4, 2.4);
   FillHist(this_syst + "/baseLineCut/MET_pt_" + this_syst, MET_pt, weight, 40, 0., 200.);
   FillHist(this_syst + "/baseLineCut/MET_phi_" + this_syst, MET_phi, weight, 40, -3.14, 3.14);
+
+  // MT2 calculation
+  
+  // 1. Define the hypothesised mass of the invisible particles.
+  //    (Set to 0.0 for neutrinos).
+  double mInvis = 0.0; 
+  
+  // ==========================================
+  // PAIRING 1: (muon 0 + jet 0) and (muon 1 + jet 1)
+  // ==========================================
+  TLorentzVector visA_1 = muons.at(0) + jets.at(0);
+  TLorentzVector visB_1 = muons.at(1) + jets.at(1);
+  
+  double mt2_pairing1 = asymm_mt2_lester_bisect::get_mT2(
+      visA_1.M(), visA_1.Px(), visA_1.Py(),
+      visB_1.M(), visB_1.Px(), visB_1.Py(),
+      METv.Px(), METv.Py(),
+      mInvis, mInvis
+  );
+  
+  // ==========================================
+  // PAIRING 2: (muon 0 + jet 1) and (muon 1 + jet 0)
+  // ==========================================
+  TLorentzVector visA_2 = muons.at(0) + jets.at(1);
+  TLorentzVector visB_2 = muons.at(1) + jets.at(0);
+  
+  double mt2_pairing2 = asymm_mt2_lester_bisect::get_mT2(
+      visA_2.M(), visA_2.Px(), visA_2.Py(),
+      visB_2.M(), visB_2.Px(), visB_2.Py(),
+      METv.Px(), METv.Py(),
+      mInvis, mInvis
+  );
+  
+  // ==========================================
+  // FINAL RESULT: Resolve ambiguity
+  // ==========================================
+  // The correct physical MT2 is the minimum of the possible valid groupings.
+  double mt2_0 = 0;
+  double mt2_1 = 0;
+  double mbl_0 = 0;
+  double mbl_1 = 0;
+  if(mt2_pairing1 < mt2_pairing2){
+    mt2_0 = mt2_pairing1;
+    mt2_1 = mt2_pairing2;
+    mbl_0 = (visA_1.M() + visB_1.M())/2.;
+    mbl_1 = (visA_2.M() + visB_2.M())/2.;
+  }
+  else{
+    mt2_0 = mt2_pairing2;
+    mt2_1 = mt2_pairing1;
+    mbl_0 = (visA_2.M() + visB_2.M())/2.;
+    mbl_1 = (visA_1.M() + visB_1.M())/2.;
+  }
+
+
+  double final_mt2 = std::min(mt2_pairing1, mt2_pairing2);
+  FillHist(this_syst + "/baseLineCut/MT2_0_" + this_syst, mt2_0, weight, 80, 0., 400.);
+  FillHist(this_syst + "/baseLineCut/MT2_1_" + this_syst, mt2_1, weight, 80, 0., 800.);
+  FillHist(this_syst + "/baseLineCut/Mbl_0_" + this_syst, mbl_0, weight, 40, 0., 200.);
+  FillHist(this_syst + "/baseLineCut/Mbl_1_" + this_syst, mbl_1, weight, 40, 0., 400.);
 
   if (!IsDATA && draw_include_pu_jets) {
     if(isPileupJet){
@@ -396,98 +476,29 @@ void Tutorial_reco_tt::executeEventFromParameter() {
      
     }
   }
+// MT2 cut
+if (mt2_0 > 180) return;
+
+  FillHist(this_syst + "/MT2Cut/muon_pt0_" + this_syst, muon_pt0, weight, 80, 0., 400.);
+  FillHist(this_syst + "/MT2Cut/muon_eta0_" + this_syst, muon_eta0, weight, 40, -2.4, 2.4);
+  FillHist(this_syst + "/MT2Cut/muon_pt1_" + this_syst, muon_pt1, weight, 80, 0., 400.);
+  FillHist(this_syst + "/MT2Cut/muon_eta1_" + this_syst, muon_eta1, weight, 40, -2.4, 2.4);
+  FillHist(this_syst + "/MT2Cut/njets_" + this_syst, njets, weight, 10, 0., 10.);
+  FillHist(this_syst + "/MT2Cut/mll_" + this_syst, mll, weight, 80, 0., 400.);
 
 
-//==== Take leading five jets in pT
-  std::vector<unsigned int> top_b_jet_candidates;
-  std::vector<unsigned int> had_W_candidates;
+  FillHist(this_syst + "/MT2Cut/njets2_" + this_syst, float(jets2.size()), weight, 10, 0., 10.);
+  FillHist(this_syst + "/MT2Cut/jet_pt0_" + this_syst, jet_pt0, weight, 80, 0., 400.);
+  FillHist(this_syst + "/MT2Cut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -2.4, 2.4);
+  FillHist(this_syst + "/MT2Cut/MET_pt_" + this_syst, MET_pt, weight, 40, 0., 200.);
+  FillHist(this_syst + "/MT2Cut/MET_phi_" + this_syst, MET_phi, weight, 40, -3.14, 3.14);
 
-  // Check up to the leading 5 jets
-  for(unsigned int ij(0); ij < 5; ij++){
-    if(btag_vector.at(ij)){
-      // We still need exactly 2 b-jets for the ttbar system
-      if(top_b_jet_candidates.size() < 2) top_b_jet_candidates.push_back(ij);
-      // allow soft b-tagged jet for mistag c (W -> cs)
-      else if(top_b_jet_candidates.size() >= 2) had_W_candidates.push_back(ij);
-    }
-    else{
-      // Expanded to keep up to 3 hadronic W jet candidates
-      if(had_W_candidates.size() < 3) had_W_candidates.push_back(ij);
-    }
-  }
+  FillHist(this_syst + "/MT2Cut/MT2_0_" + this_syst, mt2_0, weight, 80, 0., 400.);
+  FillHist(this_syst + "/MT2Cut/MT2_1_" + this_syst, mt2_1, weight, 80, 0., 800.);
+  FillHist(this_syst + "/MT2Cut/Mbl_0_" + this_syst, mbl_0, weight, 40, 0., 200.);
+  FillHist(this_syst + "/MT2Cut/Mbl_1_" + this_syst, mbl_1, weight, 40, 0., 400.);
 
-  // Require at least 3 had_W candidates and 2 top_b candidates
-  if(had_W_candidates.size() < 2 || top_b_jet_candidates.size() < 2) return;
-  FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 4.5, 1., 6, 0., 6.);
 
-  //==== Combinatorics
-  // Array to hold the 6 combinations: 3C2 (W jets) * 2P2 (b jets) = 6
-  Tutorial_reco_tt::ttCombinatoric combinatorics[6];
-  int comb_idx = 0;
-
-  // Loop over the 3 ways to choose 2 W jets out of the 3 candidates: (0,1), (0,2), (1,2)
-  for(unsigned int w1 = 0; w1 < had_W_candidates.size()-1; w1++){
-    for(unsigned int w2 = w1 + 1; w2 < had_W_candidates.size(); w2++){
-      // Loop over the 2 ways to assign the b-jets (hadronic vs leptonic)
-      for(unsigned int b_idx = 0; b_idx < 2; b_idx++){
-        combinatorics[comb_idx].lepton            = &(muons.at(0));
-        combinatorics[comb_idx].jets              = &jets;
-        combinatorics[comb_idx].met               = &METv;
-        combinatorics[comb_idx].had_W_jet_idx_1   = had_W_candidates.at(w1);
-        combinatorics[comb_idx].had_W_jet_idx_2   = had_W_candidates.at(w2);
-        combinatorics[comb_idx].had_top_b_jet_idx = top_b_jet_candidates.at(b_idx);
-        combinatorics[comb_idx].lep_top_b_jet_idx = top_b_jet_candidates.at(1 - b_idx);
-
-        // Evaluate Chi2 for this specific combination
-        this->EvalChi2(combinatorics[comb_idx]);
-        comb_idx++;
-      }
-    }
-  }
-
-  //==== Find the best combinatoric based on the minimum chi2
-  Tutorial_reco_tt::ttCombinatoric* best_combinatoric = &combinatorics[0];
-  for(unsigned int i = 1; i < 6; i++){
-    if(combinatorics[i].best_chi2 < best_combinatoric->best_chi2){
-      best_combinatoric = &combinatorics[i];
-    }
-  }
-
-  FillHist(this_syst + "/noChi2Cut/had_W_mass_" + this_syst, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
-  FillHist(this_syst + "/noChi2Cut/had_top_mass_" + this_syst, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
-  FillHist(this_syst + "/noChi2Cut/lep_W_mass_" + this_syst, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
-  FillHist(this_syst + "/noChi2Cut/lep_top_mass_" + this_syst, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
-  FillHist(this_syst + "/noChi2Cut/chi2_" + this_syst, best_combinatoric->best_chi2, weight, 50, 0., 100000.);
-  FillHist(this_syst + "/noChi2Cut/njets_" + this_syst, njets, weight, 10, 0., 10.);
-
-  if(best_combinatoric->best_chi2 >= 2e3) return;
-  FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 5.5, 1., 6, 0., 6.);
-  
-  FillHist(this_syst + "/Chi2Cut/had_W_mass_" + this_syst, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
-  FillHist(this_syst + "/Chi2Cut/had_top_mass_" + this_syst, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
-  FillHist(this_syst + "/Chi2Cut/lep_W_mass_" + this_syst, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
-  FillHist(this_syst + "/Chi2Cut/lep_top_mass_" + this_syst, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
-  FillHist(this_syst + "/Chi2Cut/chi2_" + this_syst, best_combinatoric->best_chi2, weight, 50, 0., 2000.);
-
-  FillHist(this_syst + "/Chi2Cut/muon_pt0_" + this_syst, muon_pt0, weight, 80, 0., 400.);
-  FillHist(this_syst + "/Chi2Cut/muon_eta0_" + this_syst, muon_eta0, weight, 40, -2.4, 2.4);
-  FillHist(this_syst + "/Chi2Cut/njets_" + this_syst, njets, weight, 10, 0., 10.);
-  FillHist(this_syst + "/Chi2Cut/njets2_" + this_syst, float(jets2.size()), weight, 10, 0., 10.);
-  FillHist(this_syst + "/Chi2Cut/jet_pt0_" + this_syst, jet_pt0, weight, 80, 0., 400.);
-  FillHist(this_syst + "/Chi2Cut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -2.4, 2.4);
-  FillHist(this_syst + "/Chi2Cut/MET_pt_" + this_syst, MET_pt, weight, 40, 0., 200.);
-  FillHist(this_syst + "/Chi2Cut/MET_phi_" + this_syst, MET_phi, weight, 40, -3.14, 3.14);
-
-  for (auto& jet : jets) {
-    // Get the b-tagging discriminator score
-    double this_discr = jet.GetTaggerResult(JetTagging::JetFlavTagger::ParT, JetTagging::JetFlavTaggerScoreType::B);
-    
-    // Check if the jet is b-tagged
-    if (this_discr > btag_wp_cut) {
-      FillHist(this_syst + "/Chi2Cut/btagged_RegCorr_jet_pt0_" + this_syst, float(jet.Pt()), weight, 80, 0., 400.);
-      break;
-    }
-  }
 
 }
 
