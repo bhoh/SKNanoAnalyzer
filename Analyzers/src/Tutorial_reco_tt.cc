@@ -79,9 +79,10 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   bool draw_include_pu_jets = false;
   bool correct_b_jet_pt = true;
   bool apply_pu_id = false;
-  bool use_pog_tight_muon_id = false; // if not use medium prompt ID
+  bool use_pog_tight_muon_id = true; // if not use medium prompt ID
   bool use_pog_mva_tight_muon_id = false;
   bool eval_top_pt_reweight_normalization = false;
+  bool use_UParT_JEC = false;
 
   const TString this_syst = systHelper->getCurrentSysName();
   if (IsDATA && this_syst != "Central") return;
@@ -101,6 +102,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   Muon::MuonID this_muon_id = MuonIDs[0];
   TString this_muon_id_sf_key = MuonIDISOSFKeys[0];
   TString this_muon_iso_sf_key = MuonIDISOSFKeys[1];
+  TString this_muon_trig_sf_key = "";
 
   if (use_pog_mva_tight_muon_id) {
     this_muon_id = MuonIDs[2];
@@ -110,6 +112,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     this_muon_id = MuonIDs[0];
     this_muon_id_sf_key = MuonIDISOSFKeys[0];
     this_muon_iso_sf_key = MuonIDISOSFKeys[1];
+    this_muon_trig_sf_key = "NUM_IsoMu24_DEN_CutBasedIdTight_and_PFIsoTight";
   }
   else {
     this_muon_id = MuonIDs[1];
@@ -158,7 +161,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     }
   }
   auto jet_id = apply_pu_id ? Jet::JetID::PUID_LOOSE : Jet::JetID::TIGHT;
-  std::vector<size_t> SelectedJetIndices = SelectJetIndices(AllJetViews, jet_id, 20., 2.4, jes_variation, MyCorrection::variation::nom);
+  std::vector<size_t> SelectedJetIndices = SelectJetIndices(AllJetViews, jet_id, 0., 2.4, jes_variation, MyCorrection::variation::nom);
   RVec<Jet> jets = MaterializeJets(AllJetViews, SelectedJetIndices, jes_variation, MyCorrection::variation::nom);
   jets = JetsVetoLeptonInside(jets, electrons, muons, 0.3);
 
@@ -180,7 +183,70 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   //==== B-Tagging (DeepJet Medium WP example)
   int NBJets = 0;
   int njets_pt30_non_btagged = 0;
-  float btag_wp_cut = myCorr->GetBTaggingWP(); 
+  float btag_wp_cut = myCorr->GetBTaggingWP();
+
+
+  // Loop through the jets and apply corrections to b-tagged ones
+  for (auto& jet : jets) {
+    // Get the b-tagging discriminator score
+    double this_discr = jet.GetTaggerResult(JetTagging::JetFlavTagger::ParT, JetTagging::JetFlavTaggerScoreType::B);
+    
+    // Check if the jet is b-tagged
+    if (this_discr > btag_wp_cut) {
+        
+        double current_pt  = jet.Pt();
+        double raw_pt = jet.GetRawPt();
+        double unsmeared_pt = jet.GetUnsmearedP4().Pt();
+        double current_eta = jet.Eta();
+        double current_phi = jet.Phi();
+        double current_m   = jet.M();
+
+        double L1L2L3Res = myCorr->GetJESSF(jet.GetArea(), current_eta, raw_pt, current_phi, Rho_fixedGridRhoFastjetAll, ev.run());
+        double L2L3Residual = myCorr->GetJESSF(jet.GetArea(), current_eta, raw_pt, current_phi, Rho_fixedGridRhoFastjetAll, ev.run(), "L2L3Residual");
+
+        double UParTAK4RegPtRawCorr = jet.UParTAK4RegPtRawCorr();
+        double UParTAK4RegPtRawCorrNeutrino = jet.UParTAK4RegPtRawCorrNeutrino();
+        double UParT_ratio = UParTAK4RegPtRawCorrNeutrino / UParTAK4RegPtRawCorr;
+        FillHist(this_syst + "/corrections/UParTAK4RegPtRawCorr_" + this_syst, UParTAK4RegPtRawCorr, 1., 80, 0., 2);
+        FillHist(this_syst + "/corrections/UParTAK4RegPtRawCorrNeutrino_" + this_syst, UParTAK4RegPtRawCorrNeutrino, 1., 80, 0., 2);
+        FillHist(this_syst + "/corrections/UParT_ratio_" + this_syst, UParT_ratio, 1., 80, 0., 2);
+        // Calculate your modified pT
+        double modified_pt = current_pt;
+        double modified_m  = current_m;
+        if (use_UParT_JEC) {
+          modified_pt = current_pt * (1/L1L2L3Res) * UParTAK4RegPtRawCorrNeutrino * L2L3Residual;
+          modified_m  = current_m * modified_pt / current_pt;
+        }
+        else{
+          modified_pt = current_pt * UParT_ratio;
+          modified_m  = current_m  * UParT_ratio;
+        }
+
+        // Update the LorentzVector with the new pT
+        if(correct_b_jet_pt){
+          jet.SetPtEtaPhiM(modified_pt, current_eta, current_phi, modified_m);
+        }
+        
+    }
+    else{
+      if(use_UParT_JEC){
+        double current_pt  = jet.Pt();
+        double raw_pt = jet.GetRawPt();
+        double unsmeared_pt = jet.GetUnsmearedP4().Pt();
+        double current_eta = jet.Eta();
+        double current_phi = jet.Phi();
+        double current_m   = jet.M();
+
+        double L1L2L3Res = myCorr->GetJESSF(jet.GetArea(), current_eta, raw_pt, current_phi, Rho_fixedGridRhoFastjetAll, ev.run());
+        double L2L3Residual = myCorr->GetJESSF(jet.GetArea(), current_eta, raw_pt, current_phi, Rho_fixedGridRhoFastjetAll, ev.run(), "L2L3Residual");
+
+        double UParTAK4RegPtRawCorr = jet.UParTAK4RegPtRawCorr();
+        double modified_pt = current_pt * (1/L1L2L3Res) * UParTAK4RegPtRawCorr * L2L3Residual;
+        double modified_m  = current_m * modified_pt / current_pt;
+        jet.SetPtEtaPhiM(modified_pt, current_eta, current_phi, modified_m);
+      }
+    }
+  }
   std::vector<bool> btag_vector;
 
   for (unsigned int ij = 0; ij < jets.size(); ij++) {
@@ -188,7 +254,10 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     if (this_discr > btag_wp_cut) {
       NBJets++;
       btag_vector.push_back(true);
-      njets_pt30_non_btagged++;
+      if (jets.at(ij).Pt() > 25){
+        njets_pt30_non_btagged++;
+      }
+
     } else {
       btag_vector.push_back(false);
       if (jets.at(ij).Pt() > 30){
@@ -220,6 +289,10 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     else {
       muon_iso_sf = myCorr->GetMuonIDSF(this_muon_iso_sf_key, muons, MyCorrection::variation::nom);
       weight *= muon_iso_sf;
+    }
+    if (use_pog_tight_muon_id) {
+        float muon_trig_sf = myCorr->GetMuonTriggerSF(this_muon_trig_sf_key, muons, MyCorrection::variation::nom);
+        weight *= muon_trig_sf;
     }
     float pu_weight = myCorr->GetPUWeight(ev.nTrueInt(), MyCorrection::variation::nom);
     weight *= pu_weight;
@@ -310,36 +383,6 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     }
   }
 
-  // Loop through the jets and apply corrections to b-tagged ones
-  for (auto& jet : jets) {
-    // Get the b-tagging discriminator score
-    double this_discr = jet.GetTaggerResult(JetTagging::JetFlavTagger::ParT, JetTagging::JetFlavTaggerScoreType::B);
-    
-    // Check if the jet is b-tagged
-    if (this_discr > btag_wp_cut) {
-        
-        double current_pt  = jet.Pt();
-        double current_eta = jet.Eta();
-        double current_phi = jet.Phi();
-        double current_m   = jet.M();
-
-        double UParTAK4RegPtRawCorr = jet.UParTAK4RegPtRawCorr();
-        double UParTAK4RegPtRawCorrNeutrino = jet.UParTAK4RegPtRawCorrNeutrino();
-        double UParT_ratio = UParTAK4RegPtRawCorrNeutrino / UParTAK4RegPtRawCorr;
-        FillHist(this_syst + "/corrections/UParTAK4RegPtRawCorr_" + this_syst, UParTAK4RegPtRawCorr, weight, 80, 0., 2);
-        FillHist(this_syst + "/corrections/UParTAK4RegPtRawCorrNeutrino_" + this_syst, UParTAK4RegPtRawCorrNeutrino, weight, 80, 0., 2);
-        FillHist(this_syst + "/corrections/UParT_ratio_" + this_syst, UParT_ratio, weight, 80, 0., 2);
-        // Calculate your modified pT
-        double modified_pt = current_pt * UParT_ratio;
-        double modified_m  = current_m  * UParT_ratio;
-
-        // Update the LorentzVector with the new pT
-        if(correct_b_jet_pt){
-          jet.SetPtEtaPhiM(modified_pt, current_eta, current_phi, modified_m);
-        }
-        
-    }
-  }
 
   for (auto& jet : jets) {
     // Get the b-tagging discriminator score
