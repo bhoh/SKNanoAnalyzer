@@ -190,6 +190,7 @@ public:
     j_unsmearedP4 = jet;
   };
   inline double GetM() { return j_m; }
+  inline double GetArea() { return j_area; };
   inline int partonFlavour() const { return j_partonFlavour; };
   inline int hadronFlavour() const { return j_hadronFlavour; };
   inline int genJetIdx() const { return j_genJetIdx; };
