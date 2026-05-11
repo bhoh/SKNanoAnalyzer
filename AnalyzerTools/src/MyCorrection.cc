@@ -1544,6 +1544,40 @@ float MyCorrection::GetJESSF(const float area, const float eta, const float pt,
   return safeEvaluate(cset, "GetJERSF", args);
 }
 
+// for UParTAK4 JESC
+float MyCorrection::GetJESSF(const float area, const float eta, const float pt,
+                             const float phi, const float rho,
+                             const unsigned int runNumber, const TString &source) const {
+  correction::Correction::Ref cset = nullptr;
+  string cset_string = JME_JES_GT.at(GetEra().Data());
+  cset_string.replace(cset_string.find("######"), 6, source);
+  try {
+    cset = cset_jerc->at(cset_string);
+  } catch (const std::out_of_range& e) {
+    // 에러 발생 시 cset_string의 정확한 값을 에러 메시지와 함께 출력합니다.
+    std::cerr << "\n[Error] Correction set을 찾을 수 없습니다!" << std::endl;
+    std::cerr << "찾으려는 cset_string: [" << cset_string << "]" << std::endl;
+    std::cerr << "에러 내용: " << e.what() << "\n" << std::endl;
+    
+    // 디버깅 정보를 출력한 후, 프로그램을 안전하게 중단하기 위해 에러를 다시 던집니다.
+    throw; 
+  }
+  vector<correction::Variable::Type> args;
+  float JESSF = 1.;
+  if (GetEra() == "2023BPix" || GetEra() == "2024") {
+    args = {eta, pt};
+    if (IsDATA)
+      args = {static_cast<float>(runNumber), eta, pt};
+  } else if (GetEra() == "2023") {
+    args = {area, eta, pt, rho};
+    if (IsDATA)
+      args = {area, eta, pt, rho, static_cast<float>(runNumber)};
+  } else {
+    args = {eta, pt};
+  }
+  return safeEvaluate(cset, "GetJERSF", args);
+}
+
 float MyCorrection::GetJESUncertainty(const float eta, const float pt,
                                       const TString &source) const {
   correction::Correction::Ref cset = nullptr;

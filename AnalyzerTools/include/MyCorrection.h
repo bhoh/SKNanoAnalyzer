@@ -135,6 +135,7 @@ public:
     float GetJER(const float eta, const float pt, const float rho) const;
     float GetJERSF(const float eta, const float pt, const variation syst = variation::nom, const TString &source = "total") const;
     float GetJESSF(const float area, const float eta, const float pt, const float phi, const float rho, const unsigned int runNumber) const;
+    float GetJESSF(const float area, const float eta, const float pt, const float phi, const float rho, const unsigned int runNumber, const TString &source) const;
     float GetJESUncertaintySF(const float eta, const float pt, const variation syst = variation::nom, const TString &source = "total") const;
     float GetJESUncertainty(const float eta, const float pt, const TString &source = "total") const;
     // jerc_fatjet
