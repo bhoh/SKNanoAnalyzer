@@ -123,16 +123,16 @@ MyCorrection::MyCorrection(const TString &era, const TString &period,
   // Please use ####### as placeholder
   if (!IsData) {
     JME_JER_GT["2024"] =
-        "Summer23BPixPrompt23_RunD_JRV1_MC_######_AK4PFPuppi"; // this is
+        "Summer24Prompt24_JRV1_MC_######_AK4PFPuppi";
                                                                // because real
                                                                // content of
                                                                // file is this
-    JME_JES_GT["2024"] = "Summer24Prompt24_V2_MC_######_AK4PFPuppi";
+    JME_JES_GT["2024"] = "Summer24Prompt24_V3_MC_######_AK4PFPuppi";
   } else {
     // JME_JER_GT["2024"] =
     // "Summer23BPixPrompt23_RunD_JRV1_DATA_######_AK4PFPuppi"; // this is
     // because real content of file is this
-    JME_JES_GT["2024"] = "Summer24Prompt24_V2_DATA_######_AK4PFPuppi";
+    JME_JES_GT["2024"] = "Summer24Prompt24_V3_DATA_######_AK4PFPuppi";
   }
 
   JME_vetomap_keys["2024"] = "Summer24Prompt24_RunBCDEFGHI_V1";
@@ -211,6 +211,7 @@ MyCorrection::GetEraConfig(TString era, const string &btagging_eff_file,
 
   if (era == "2024") {
     const string tag = "/Run3-24CDEReprocessingFGHIPrompt-Summer24-NanoAODv15/latest/";
+    const string tag_jme_temp = "/Run3-24CDEReprocessingFGHIPrompt-Summer24-NanoAODv15/2025-12-02/";
     const string tag_temp = "/Run3-23DSep23-Summer23BPix-NanoAODv12/latest/";
     config.json_muon += tag + "muon_Z.json.gz";
     config.json_muon_trig_eff += "/2024/MUO/muon_trig.json";
@@ -227,10 +228,10 @@ MyCorrection::GetEraConfig(TString era, const string &btagging_eff_file,
         tag + "electronSS_EtDependent.json.gz";
     config.json_electron_hlt += tag + "electronHlt.json.gz";
     // config.json_photon += "/2023_Summer23BPix/photon.json.gz";
-    config.json_jetid += tag + "jetid.json.gz";
+    config.json_jetid += tag_jme_temp + "jetid.json.gz";
     config.json_jerc += tag + "jet_jerc.json.gz";
     // config.json_jerc_fatjet += "/2023_Summer23BPix/fatJet_jerc.json.gz";
-    config.json_jetvetomap += tag + "jetvetomaps.json.gz";
+    config.json_jetvetomap += tag_jme_temp + "jetvetomaps.json.gz";
     // config.json_met += "/2023_Summer23BPix/met.json.gz";
     config.txt_roccor += "/RoccoR2023BPix.txt";
     config.golden_json +=
@@ -1499,7 +1500,13 @@ bool MyCorrection::PassFatJetID(const FatJet &fatjet,
 float MyCorrection::GetJER(const float eta, const float pt,
                            const float rho) const {
   correction::Correction::Ref cset = nullptr;
-  string cset_string = JME_JER_GT.at(GetEra().Data());
+  string cset_string = JME_JER_GT.at("2024");
+  if (std::string(GetEra().Data()) != "2024") {
+    throw std::runtime_error(
+        std::string("[MyCorrection::GetJER] Error: Expected era 2024, but got ") + 
+        GetEra().Data()
+    );
+  }
   cset_string.replace(cset_string.find("######"), 6, "PtResolution");
   cset = cset_jerc->at(cset_string);
   return safeEvaluate(cset, "GetJER", {eta, pt, rho});
@@ -1508,16 +1515,59 @@ float MyCorrection::GetJER(const float eta, const float pt,
 float MyCorrection::GetJERSF(const float eta, const float pt,
                              const variation syst,
                              const TString &source) const {
-  correction::Correction::Ref cset = nullptr;
-  string cset_string = JME_JER_GT.at(GetEra().Data());
-  cset_string.replace(cset_string.find("######"), 6, "ScaleFactor");
-  cset = cset_jerc->at(cset_string);
-  if (Run == 3) {
-    return safeEvaluate(cset, "GetJERSF", {eta, pt, getSystString_JME(syst)});
-  } else if (Run == 2) {
-    return safeEvaluate(cset, "GetJERSF", {eta, getSystString_JME(syst)});
+  // 1. Get the base string for the current era
+  string base_cset_string = JME_JER_GT.at("2024");
+  if (std::string(GetEra().Data()) != "2024") {
+    throw std::runtime_error(
+        std::string("[MyCorrection::GetJER] Error: Expected era 2024, but got ") + 
+        GetEra().Data()
+    );
   }
-  return 1.;
+
+  // ==========================================
+  // Run 2: Legacy combined tag schema
+  // ==========================================
+  if (Run == 2) {
+    string cset_string = base_cset_string;
+    cset_string.replace(cset_string.find("######"), 6, "ScaleFactor");
+    correction::Correction::Ref cset = cset_jerc->at(cset_string);
+    // Old format takes {eta, syst}
+    return safeEvaluate(cset, "GetJERSF_Run2", {eta, getSystString_JME(syst)});
+  }
+
+  // ==========================================
+  // Run 3: New separated tags schema
+  // ==========================================
+  if (Run == 3) {
+    // 2. Evaluate Nominal ScaleFactor
+    string sf_cset_string = base_cset_string;
+    sf_cset_string.replace(sf_cset_string.find("######"), 6, "ScaleFactor");
+    correction::Correction::Ref cset_sf = cset_jerc->at(sf_cset_string);
+    
+    // New SF format drops the systematic string argument and adds pT
+    float sf_nom = safeEvaluate(cset_sf, "GetJERSF_nom", {eta, pt});
+
+    if (syst == variation::nom) {
+      return sf_nom;
+    }
+
+    // 3. Evaluate SFUncertainty for variations
+    string unc_cset_string = base_cset_string;
+    unc_cset_string.replace(unc_cset_string.find("######"), 6, "SFUncertainty");
+    correction::Correction::Ref cset_unc = cset_jerc->at(unc_cset_string);
+    
+    // SFUncertainty tag also expects {eta, pt}
+    float sf_unc = safeEvaluate(cset_unc, "GetJERSF_unc", {eta, pt});
+
+    // 4. Apply the updated formula
+    if (syst == variation::up) {
+      return sf_nom * (1.0f + sf_unc);
+    } else if (syst == variation::down) {
+      return sf_nom * (1.0f - sf_unc);
+    }
+  }
+
+  return 1.0f;
 }
 
 // JESC
