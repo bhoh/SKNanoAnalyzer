@@ -64,6 +64,7 @@ void Tutorial_reco_tt::executeEvent() {
 
   ev = GetEvent();
 
+
   // Check this for Run3
   weight_Prefire = 1.; 
 
@@ -122,6 +123,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 0.5, 1., 6, 0., 6.);
 
+
   //==== MET Filter & Trigger
   if (!PassMetFilter(AllJetViews, ev)) return;
   if (!(ev.PassTrigger(IsoMuTriggerName))) return;
@@ -143,7 +145,6 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   RVec<Muon> muons = MaterializeMuons(AllMuonViews, SelectedMuonIndices);
   RVec<Electron> electrons = MaterializeElectrons(AllElectronViews, SelectedElectronIndices);
-
   //==== Jet Selection
   MyCorrection::variation jes_variation = MyCorrection::variation::nom;
   MyCorrection::variation btag_jes_variation = MyCorrection::variation::nom;
@@ -161,10 +162,9 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     }
   }
   auto jet_id = apply_pu_id ? Jet::JetID::PUID_LOOSE : Jet::JetID::TIGHT;
-  std::vector<size_t> SelectedJetIndices = SelectJetIndices(AllJetViews, jet_id, 0., 2.4, jes_variation, MyCorrection::variation::nom);
+  std::vector<size_t> SelectedJetIndices = SelectJetIndices(AllJetViews, jet_id, 0., 5.191, jes_variation, MyCorrection::variation::nom);
   RVec<Jet> jets = MaterializeJets(AllJetViews, SelectedJetIndices, jes_variation, MyCorrection::variation::nom);
   jets = JetsVetoLeptonInside(jets, electrons, muons, 0.3);
-
   //==== Sorting
   sort(muons.begin(), muons.end(), PtComparing);
   sort(jets.begin(), jets.end(), PtComparing);
@@ -179,7 +179,6 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   if (!PassJetVetoMap(AllJetViews, AllMuonViews, "jetvetomap_fpix")) return;
   FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 2.5, 1., 6, 0., 6.);
-
   //==== B-Tagging (DeepJet Medium WP example)
   int NBJets = 0;
   int njets_pt30_non_btagged = 0;
@@ -260,7 +259,10 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
     } else {
       btag_vector.push_back(false);
-      if (jets.at(ij).Pt() > 30){
+      if (jets.at(ij).Pt() > 30 && abs(jets.at(ij).Eta()) < 2.5){
+        njets_pt30_non_btagged++;
+      }
+      else if (jets.at(ij).Pt() > 30 && abs(jets.at(ij).Eta()) >= 2.5){
         njets_pt30_non_btagged++;
       }
     }
@@ -296,7 +298,13 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     }
     float pu_weight = myCorr->GetPUWeight(ev.nTrueInt(), MyCorrection::variation::nom);
     weight *= pu_weight;
-    float btag_sf = myCorr->GetBTaggingSF(jets, 
+    RVec<Jet> jets_2p5 = RVec<Jet>();
+    for (auto& jet : jets) {
+      if (abs(jet.Eta()) < 2.499 && jet.Pt() > 20.) {
+        jets_2p5.push_back(jet);
+      }
+    }
+    float btag_sf = myCorr->GetBTaggingSF(jets_2p5, 
             JetTagging::JetFlavTagger::ParT, 
             JetTagging::JetFlavTaggerWP::Medium,
             JetTagging::JetTaggingSFMethod::comb,
@@ -304,7 +312,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
         );
     weight *= btag_sf;
 
-    if (MCSample.Contains("TT")) {
+    if (MCSample.Contains("powheg") && MCSample.Contains("TT")) {
       auto [firstTopIdx, firstAntiTopIdx, lastTopIdx, lastAntiTopIdx] =
           GetTopAndAntiTopIndices(AllGenViews);
 
@@ -412,7 +420,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   jets2 = JetsVetoLeptonInside(jets2, electrons, muons, 0.3);
   FillHist(this_syst + "/baseLineCut/njets2_" + this_syst, float(jets2.size()), weight, 10, 0., 10.);
   FillHist(this_syst + "/baseLineCut/jet_pt0_" + this_syst, jet_pt0, weight, 80, 0., 400.);
-  FillHist(this_syst + "/baseLineCut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -2.4, 2.4);
+  FillHist(this_syst + "/baseLineCut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -5.2, 5.2);
   FillHist(this_syst + "/baseLineCut/MET_pt_" + this_syst, MET_pt, weight, 40, 0., 200.);
   FillHist(this_syst + "/baseLineCut/MET_phi_" + this_syst, MET_phi, weight, 40, -3.14, 3.14);
 
@@ -517,7 +525,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   FillHist(this_syst + "/Chi2Cut/njets_" + this_syst, njets, weight, 10, 0., 10.);
   FillHist(this_syst + "/Chi2Cut/njets2_" + this_syst, float(jets2.size()), weight, 10, 0., 10.);
   FillHist(this_syst + "/Chi2Cut/jet_pt0_" + this_syst, jet_pt0, weight, 80, 0., 400.);
-  FillHist(this_syst + "/Chi2Cut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -2.4, 2.4);
+  FillHist(this_syst + "/Chi2Cut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -5.2, 5.2);
   FillHist(this_syst + "/Chi2Cut/MET_pt_" + this_syst, MET_pt, weight, 40, 0., 200.);
   FillHist(this_syst + "/Chi2Cut/MET_phi_" + this_syst, MET_phi, weight, 40, -3.14, 3.14);
 
