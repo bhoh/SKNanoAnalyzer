@@ -513,17 +513,27 @@ void AtobbMLTree::FillTreeBranches(
   float bb_mass_01 = -999.f;
   float bb_mass_02 = -999.f;
   float bb_mass_12 = -999.f;
+  float bb_mass_03 = 0.f;
+  float bb_mass_13 = 0.f;
+  float bb_mass_23 = 0.f;
   float bb_dr_01 = -999.f;
   float bb_dr_02 = -999.f;
   float bb_dr_12 = -999.f;
+  float bb_dr_03 = 0.f;
+  float bb_dr_13 = 0.f;
+  float bb_dr_23 = 0.f;
 
+
+// Calculate kinematics for the first two b-jets
   if (bjet_indices.size() >= 2) {
     TLorentzVector b0 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(0)));
     TLorentzVector b1 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(1)));
+    
     bb_mass_01 = float((b0 + b1).M());
     bb_dr_01 = float(b0.DeltaR(b1));
   }
 
+  // Calculate kinematics involving the third b-jet
   if (bjet_indices.size() >= 3) {
     TLorentzVector b0 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(0)));
     TLorentzVector b1 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(1)));
@@ -536,12 +546,68 @@ void AtobbMLTree::FillTreeBranches(
     bb_dr_12 = float(b1.DeltaR(b2));
   }
 
+  // Calculate kinematics involving the fourth b-jet
+  if (bjet_indices.size() >= 4) {
+    TLorentzVector b0 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(0)));
+    TLorentzVector b1 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(1)));
+    TLorentzVector b2 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(2)));
+    TLorentzVector b3 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(3)));
+
+    bb_mass_03 = float((b0 + b3).M());
+    bb_mass_13 = float((b1 + b3).M());
+    bb_mass_23 = float((b2 + b3).M());
+
+    bb_dr_03 = float(b0.DeltaR(b3));
+    bb_dr_13 = float(b1.DeltaR(b3));
+    bb_dr_23 = float(b2.DeltaR(b3));
+  }
+
+  // Set branches for invariant masses
   SetBranch("Training_Tree", "bb_mass_01", bb_mass_01);
   SetBranch("Training_Tree", "bb_mass_02", bb_mass_02);
   SetBranch("Training_Tree", "bb_mass_12", bb_mass_12);
+  SetBranch("Training_Tree", "bb_mass_03", bb_mass_03);
+  SetBranch("Training_Tree", "bb_mass_13", bb_mass_13);
+  SetBranch("Training_Tree", "bb_mass_23", bb_mass_23);
+
+  // Set branches for Delta R
   SetBranch("Training_Tree", "bb_dr_01", bb_dr_01);
   SetBranch("Training_Tree", "bb_dr_02", bb_dr_02);
   SetBranch("Training_Tree", "bb_dr_12", bb_dr_12);
+  SetBranch("Training_Tree", "bb_dr_03", bb_dr_03);
+  SetBranch("Training_Tree", "bb_dr_13", bb_dr_13);
+  SetBranch("Training_Tree", "bb_dr_23", bb_dr_23);
+
+  float lnu_mass = float((static_cast<TLorentzVector>(lepton) + static_cast<TLorentzVector>(METv)).M());
+  SetBranch("Training_Tree", "lnu_mass", lnu_mass);
+
+  // Initialize with a default value (e.g., -999.0 or 0.0) in case there are fewer than 2 non-b-jets
+  float jj_mass = 0.f; 
+
+  // Vector to store indices of non-b-tagged jets
+  std::vector<int> non_bjet_indices;
+  // Iterate through all jets to find non-b-jets
+  // Since 'jets' is already pT-ordered, the first ones found have the highest pT
+  for (size_t i = 0; i < jets.size(); ++i) {
+    // Check if the current jet index is NOT in the bjet_indices list
+    if (std::find(bjet_indices.begin(), bjet_indices.end(), i) == bjet_indices.end()) {
+      non_bjet_indices.push_back(i);
+    }
+    
+    // Stop the loop once we find the two highest pT non-b-jets
+    if (non_bjet_indices.size() >= 2) {
+      break;
+    }
+  }
+  if (non_bjet_indices.size() >= 2) {
+    TLorentzVector j0 = static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(0)));
+    TLorentzVector j1 = static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(1)));
+    jj_mass = float((j0 + j1).M());
+    SetBranch("Training_Tree", "jj_mass", jj_mass);
+  }
+  else {
+    SetBranch("Training_Tree", "jj_mass", jj_mass);
+  }
 
   SetBranch("Training_Tree", "best_chi2", best_chi2);
   SetBranch("Training_Tree", "had_W_mass", had_W_mass);
