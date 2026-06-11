@@ -510,74 +510,6 @@ void AtobbMLTree::FillTreeBranches(
     if (bscore > btag_wp_cut) bjet_indices.push_back(i);
   }
 
-  float bb_mass_01 = -999.f;
-  float bb_mass_02 = -999.f;
-  float bb_mass_12 = -999.f;
-  float bb_mass_03 = 0.f;
-  float bb_mass_13 = 0.f;
-  float bb_mass_23 = 0.f;
-  float bb_dr_01 = -999.f;
-  float bb_dr_02 = -999.f;
-  float bb_dr_12 = -999.f;
-  float bb_dr_03 = 0.f;
-  float bb_dr_13 = 0.f;
-  float bb_dr_23 = 0.f;
-
-
-// Calculate kinematics for the first two b-jets
-  if (bjet_indices.size() >= 2) {
-    TLorentzVector b0 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(0)));
-    TLorentzVector b1 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(1)));
-    
-    bb_mass_01 = float((b0 + b1).M());
-    bb_dr_01 = float(b0.DeltaR(b1));
-  }
-
-  // Calculate kinematics involving the third b-jet
-  if (bjet_indices.size() >= 3) {
-    TLorentzVector b0 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(0)));
-    TLorentzVector b1 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(1)));
-    TLorentzVector b2 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(2)));
-
-    bb_mass_02 = float((b0 + b2).M());
-    bb_mass_12 = float((b1 + b2).M());
-
-    bb_dr_02 = float(b0.DeltaR(b2));
-    bb_dr_12 = float(b1.DeltaR(b2));
-  }
-
-  // Calculate kinematics involving the fourth b-jet
-  if (bjet_indices.size() >= 4) {
-    TLorentzVector b0 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(0)));
-    TLorentzVector b1 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(1)));
-    TLorentzVector b2 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(2)));
-    TLorentzVector b3 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(3)));
-
-    bb_mass_03 = float((b0 + b3).M());
-    bb_mass_13 = float((b1 + b3).M());
-    bb_mass_23 = float((b2 + b3).M());
-
-    bb_dr_03 = float(b0.DeltaR(b3));
-    bb_dr_13 = float(b1.DeltaR(b3));
-    bb_dr_23 = float(b2.DeltaR(b3));
-  }
-
-  // Set branches for invariant masses
-  SetBranch("Training_Tree", "bb_mass_01", bb_mass_01);
-  SetBranch("Training_Tree", "bb_mass_02", bb_mass_02);
-  SetBranch("Training_Tree", "bb_mass_12", bb_mass_12);
-  SetBranch("Training_Tree", "bb_mass_03", bb_mass_03);
-  SetBranch("Training_Tree", "bb_mass_13", bb_mass_13);
-  SetBranch("Training_Tree", "bb_mass_23", bb_mass_23);
-
-  // Set branches for Delta R
-  SetBranch("Training_Tree", "bb_dr_01", bb_dr_01);
-  SetBranch("Training_Tree", "bb_dr_02", bb_dr_02);
-  SetBranch("Training_Tree", "bb_dr_12", bb_dr_12);
-  SetBranch("Training_Tree", "bb_dr_03", bb_dr_03);
-  SetBranch("Training_Tree", "bb_dr_13", bb_dr_13);
-  SetBranch("Training_Tree", "bb_dr_23", bb_dr_23);
-
   float lnu_mass = float((static_cast<TLorentzVector>(lepton) + static_cast<TLorentzVector>(METv)).M());
   SetBranch("Training_Tree", "lnu_mass", lnu_mass);
 
@@ -608,6 +540,118 @@ void AtobbMLTree::FillTreeBranches(
   else {
     SetBranch("Training_Tree", "jj_mass", jj_mass);
   }
+
+  float bb_mass_01 = -999.f;
+  float bb_mass_02 = -999.f;
+  float bb_mass_12 = -999.f;
+  float bb_mass_03 = 0.f;
+  float bb_mass_13 = 0.f;
+  float bb_mass_23 = 0.f;
+  float bb_dr_01 = -999.f;
+  float bb_dr_02 = -999.f;
+  float bb_dr_12 = -999.f;
+  float bb_dr_03 = 0.f;
+  float bb_dr_13 = 0.f;
+  float bb_dr_23 = 0.f;
+
+  float bblnu_mass_01 = -999.f;
+  float bblnu_mass_02 = -999.f;
+  float bblnu_mass_12 = -999.f;
+  float bblnu_mass_03 = 0.f;
+  float bblnu_mass_13 = 0.f;
+  float bblnu_mass_23 = 0.f;
+
+  float bbjj_mass_01 = -999.f;
+  float bbjj_mass_02 = -999.f;
+  float bbjj_mass_12 = -999.f;
+  float bbjj_mass_03 = 0.f;
+  float bbjj_mass_13 = 0.f;
+  float bbjj_mass_23 = 0.f;
+
+
+// Calculate kinematics for the first two b-jets
+  if (bjet_indices.size() >= 2) {
+    TLorentzVector b0 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(0)));
+    TLorentzVector b1 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(1)));
+    
+    bb_mass_01 = float((b0 + b1).M());
+    bb_dr_01 = float(b0.DeltaR(b1));
+    bblnu_mass_01 = float((b0 + b1 + static_cast<TLorentzVector>(lepton) + static_cast<TLorentzVector>(METv)).M());
+    bbjj_mass_01 = float((b0 + b1 + static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(0))) + static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(1)))).M());
+  }
+
+  // Calculate kinematics involving the third b-jet
+  if (bjet_indices.size() >= 3) {
+    TLorentzVector b0 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(0)));
+    TLorentzVector b1 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(1)));
+    TLorentzVector b2 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(2)));
+
+    bb_mass_02 = float((b0 + b2).M());
+    bb_mass_12 = float((b1 + b2).M());
+
+    bb_dr_02 = float(b0.DeltaR(b2));
+    bb_dr_12 = float(b1.DeltaR(b2));
+
+    bblnu_mass_02 = float((b0 + b2 + static_cast<TLorentzVector>(lepton) + static_cast<TLorentzVector>(METv)).M());
+    bblnu_mass_12 = float((b1 + b2 + static_cast<TLorentzVector>(lepton) + static_cast<TLorentzVector>(METv)).M());
+    bbjj_mass_02 = float((b0 + b2 + static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(0))) + static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(1)))).M());
+    bbjj_mass_12 = float((b1 + b2 + static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(0))) + static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(1)))).M());
+  }
+
+  // Calculate kinematics involving the fourth b-jet
+  if (bjet_indices.size() >= 4) {
+    TLorentzVector b0 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(0)));
+    TLorentzVector b1 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(1)));
+    TLorentzVector b2 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(2)));
+    TLorentzVector b3 = static_cast<TLorentzVector>(jets.at(bjet_indices.at(3)));
+
+    bb_mass_03 = float((b0 + b3).M());
+    bb_mass_13 = float((b1 + b3).M());
+    bb_mass_23 = float((b2 + b3).M());
+
+    bb_dr_03 = float(b0.DeltaR(b3));
+    bb_dr_13 = float(b1.DeltaR(b3));
+    bb_dr_23 = float(b2.DeltaR(b3));
+
+    bblnu_mass_03 = float((b0 + b3 + static_cast<TLorentzVector>(lepton) + static_cast<TLorentzVector>(METv)).M());
+    bblnu_mass_13 = float((b1 + b3 + static_cast<TLorentzVector>(lepton) + static_cast<TLorentzVector>(METv)).M());
+    bblnu_mass_23 = float((b2 + b3 + static_cast<TLorentzVector>(lepton) + static_cast<TLorentzVector>(METv)).M());
+
+    bbjj_mass_03 = float((b0 + b3 + static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(0))) + static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(1)))).M());
+    bbjj_mass_13 = float((b1 + b3 + static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(0))) + static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(1)))).M());
+    bbjj_mass_23 = float((b2 + b3 + static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(0))) + static_cast<TLorentzVector>(jets.at(non_bjet_indices.at(1)))).M());
+  }
+
+  // Set branches for invariant masses
+  SetBranch("Training_Tree", "bb_mass_01", bb_mass_01);
+  SetBranch("Training_Tree", "bb_mass_02", bb_mass_02);
+  SetBranch("Training_Tree", "bb_mass_12", bb_mass_12);
+  SetBranch("Training_Tree", "bb_mass_03", bb_mass_03);
+  SetBranch("Training_Tree", "bb_mass_13", bb_mass_13);
+  SetBranch("Training_Tree", "bb_mass_23", bb_mass_23);
+
+  // Set branches for Delta R
+  SetBranch("Training_Tree", "bb_dr_01", bb_dr_01);
+  SetBranch("Training_Tree", "bb_dr_02", bb_dr_02);
+  SetBranch("Training_Tree", "bb_dr_12", bb_dr_12);
+  SetBranch("Training_Tree", "bb_dr_03", bb_dr_03);
+  SetBranch("Training_Tree", "bb_dr_13", bb_dr_13);
+  SetBranch("Training_Tree", "bb_dr_23", bb_dr_23);
+  
+  SetBranch("Training_Tree", "bblnu_mass_01", bblnu_mass_01);
+  SetBranch("Training_Tree", "bblnu_mass_02", bblnu_mass_02);
+  SetBranch("Training_Tree", "bblnu_mass_12", bblnu_mass_12);
+  SetBranch("Training_Tree", "bblnu_mass_03", bblnu_mass_03);
+  SetBranch("Training_Tree", "bblnu_mass_13", bblnu_mass_13);
+  SetBranch("Training_Tree", "bblnu_mass_23", bblnu_mass_23);
+  SetBranch("Training_Tree", "bbjj_mass_01", bbjj_mass_01);
+  SetBranch("Training_Tree", "bbjj_mass_02", bbjj_mass_02);
+  SetBranch("Training_Tree", "bbjj_mass_12", bbjj_mass_12);
+  SetBranch("Training_Tree", "bbjj_mass_03", bbjj_mass_03);
+  SetBranch("Training_Tree", "bbjj_mass_13", bbjj_mass_13);
+  SetBranch("Training_Tree", "bbjj_mass_23", bbjj_mass_23);
+
+
 
   SetBranch("Training_Tree", "best_chi2", best_chi2);
   SetBranch("Training_Tree", "had_W_mass", had_W_mass);
