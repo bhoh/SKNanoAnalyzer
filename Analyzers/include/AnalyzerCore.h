@@ -338,9 +338,78 @@ public:
         *storage = val;
         SetBranch(treename, branchname, (void *)(storage.get()), branchname + "/O");
     }
-    //fill RVec to branch -> Not work do not use
-    //template <typename T>
-    //inline void SetBranch(const TString &treename, const TString &branchname, std::vector<T> &val) {SetBranch_Vector(treename, branchname, val);};
+    inline void SetBranch(const TString &treename, const TString &branchname, const std::vector<int> &val) {
+        const std::string key =
+            std::string(treename.Data()) + "/" + std::string(branchname.Data());
+        auto &storage = vector_int_storage[key];
+        if (!storage)
+            storage = std::make_unique<std::vector<int>>();
+        *storage = val;
+        SetBranch_Vector(treename, branchname, *storage);
+    }
+    inline void SetBranch(const TString &treename, const TString &branchname, const std::vector<float> &val) {
+        const std::string key =
+            std::string(treename.Data()) + "/" + std::string(branchname.Data());
+        auto &storage = vector_float_storage[key];
+        if (!storage)
+            storage = std::make_unique<std::vector<float>>();
+        *storage = val;
+        SetBranch_Vector(treename, branchname, *storage);
+    }
+    inline void SetBranch(const TString &treename, const TString &branchname, const std::vector<double> &val) {
+        const std::string key =
+            std::string(treename.Data()) + "/" + std::string(branchname.Data());
+        auto &storage = vector_double_storage[key];
+        if (!storage)
+            storage = std::make_unique<std::vector<double>>();
+        *storage = val;
+        SetBranch_Vector(treename, branchname, *storage);
+    }
+    inline void SetBranch(const TString &treename, const TString &branchname, const std::vector<bool> &val) {
+        const std::string key =
+            std::string(treename.Data()) + "/" + std::string(branchname.Data());
+        auto &storage = vector_bool_storage[key];
+        if (!storage)
+            storage = std::make_unique<std::vector<bool>>();
+        *storage = val;
+        SetBranch_Vector(treename, branchname, *storage);
+    }
+    inline void SetBranch(const TString &treename, const TString &branchname, const RVec<int> &val) {
+        const std::string key =
+            std::string(treename.Data()) + "/" + std::string(branchname.Data());
+        auto &storage = vector_int_storage[key];
+        if (!storage)
+            storage = std::make_unique<std::vector<int>>();
+        storage->assign(val.begin(), val.end());
+        SetBranch_Vector(treename, branchname, *storage);
+    }
+    inline void SetBranch(const TString &treename, const TString &branchname, const RVec<float> &val) {
+        const std::string key =
+            std::string(treename.Data()) + "/" + std::string(branchname.Data());
+        auto &storage = vector_float_storage[key];
+        if (!storage)
+            storage = std::make_unique<std::vector<float>>();
+        storage->assign(val.begin(), val.end());
+        SetBranch_Vector(treename, branchname, *storage);
+    }
+    inline void SetBranch(const TString &treename, const TString &branchname, const RVec<double> &val) {
+        const std::string key =
+            std::string(treename.Data()) + "/" + std::string(branchname.Data());
+        auto &storage = vector_double_storage[key];
+        if (!storage)
+            storage = std::make_unique<std::vector<double>>();
+        storage->assign(val.begin(), val.end());
+        SetBranch_Vector(treename, branchname, *storage);
+    }
+    inline void SetBranch(const TString &treename, const TString &branchname, const RVec<bool> &val) {
+        const std::string key =
+            std::string(treename.Data()) + "/" + std::string(branchname.Data());
+        auto &storage = vector_bool_storage[key];
+        if (!storage)
+            storage = std::make_unique<std::vector<bool>>();
+        storage->assign(val.begin(), val.end());
+        SetBranch_Vector(treename, branchname, *storage);
+    }
 
     void FillTrees(const TString &treename="");
     virtual void WriteHist();
@@ -370,29 +439,49 @@ protected:
     std::unordered_map<std::string, std::unique_ptr<float>> scalar_float_storage;
     std::unordered_map<std::string, std::unique_ptr<int>> scalar_int_storage;
     std::unordered_map<std::string, std::unique_ptr<bool>> scalar_bool_storage;
+    std::unordered_map<std::string, std::unique_ptr<std::vector<int>>> vector_int_storage;
+    std::unordered_map<std::string, std::unique_ptr<std::vector<float>>> vector_float_storage;
+    std::unordered_map<std::string, std::unique_ptr<std::vector<double>>> vector_double_storage;
+    std::unordered_map<std::string, std::unique_ptr<std::vector<bool>>> vector_bool_storage;
+    std::unordered_map<std::string, std::vector<int>*> vector_int_ptr_storage;
+    std::unordered_map<std::string, std::vector<float>*> vector_float_ptr_storage;
+    std::unordered_map<std::string, std::vector<double>*> vector_double_ptr_storage;
+    std::unordered_map<std::string, std::vector<bool>*> vector_bool_ptr_storage;
     std::unordered_map<std::string, ModellingPatch> modelling_patches;
     nlohmann::json modelling_json;
     TFile *outfile;
     void SetBranch(const TString &treename, const TString &branchname, void *address, const TString &leaflist);
     template <typename T>
     void SetBranch_Vector(const TString &treename, const TString &branchname, std::vector<T> &address) {
-        //Not work do not use
         try {
             TTree *tree = GetTree(treename);
+            const std::string key = std::string(treename.Data()) + "/" + std::string(branchname.Data());
 
             unordered_map<string, TBranch *> *this_branchmap = &branchmaps[tree];
             auto it = this_branchmap->find(string(branchname));
 
-            if (it == this_branchmap->end())
-            {
-                //template <typename T, std::size_t N> TBranch *Branch(const char* name, std::array<T, N> *obj, Int_t bufsize = 32000, Int_t splitlevel = 99)
-                auto br = tree->Branch(branchname, &address);
-                this_branchmap->insert({string(branchname), br});
+            std::vector<T>** ptr_to_ptr = nullptr;
+            if constexpr (std::is_same_v<T, int>) {
+                vector_int_ptr_storage[key] = &address;
+                ptr_to_ptr = &vector_int_ptr_storage[key];
+            } else if constexpr (std::is_same_v<T, float>) {
+                vector_float_ptr_storage[key] = &address;
+                ptr_to_ptr = &vector_float_ptr_storage[key];
+            } else if constexpr (std::is_same_v<T, double>) {
+                vector_double_ptr_storage[key] = &address;
+                ptr_to_ptr = &vector_double_ptr_storage[key];
+            } else if constexpr (std::is_same_v<T, bool>) {
+                vector_bool_ptr_storage[key] = &address;
+                ptr_to_ptr = &vector_bool_ptr_storage[key];
+            } else {
+                static_assert(std::is_same_v<T, int> || std::is_same_v<T, float> || std::is_same_v<T, double> || std::is_same_v<T, bool>, "Unsupported vector type in SetBranch_Vector");
             }
-            else
-            {
-                //void TBranch::SetAddress(void *add)
-                it -> second->SetAddress(&address);
+
+            if (it == this_branchmap->end()) {
+                auto br = tree->Branch(branchname, ptr_to_ptr);
+                this_branchmap->insert({string(branchname), br});
+            } else {
+                it->second->SetAddress(ptr_to_ptr);
             }
         } catch (int e) {
             cout << "[AnalyzerCore::SetBranch] Error get tree: " << treename.Data() << endl;
