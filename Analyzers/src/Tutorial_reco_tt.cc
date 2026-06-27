@@ -1,5 +1,9 @@
 #include "Tutorial_reco_tt.h"
 
+#include <cmath>
+#include <iomanip>
+#include <sstream>
+
 Tutorial_reco_tt::Tutorial_reco_tt() :
   const_top_mass(172.5),
   const_top_width(1.5),
@@ -454,6 +458,46 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
     systHelper->assignWeightFunctionMap(weight_function_map);
     weight_map = systHelper->calculateWeight();
+
+    if (this_syst == "Central") {
+      auto safe_lhe_pdf_weight = [&](int index) {
+        if (!LHEPdfWeight.valid() || nLHEPdfWeight <= index) return 1.f;
+        const float weight = LHEPdfWeight[index];
+        return std::isfinite(weight) ? weight : 1.f;
+      };
+
+      const float nominal_systematic_weight =
+          weight_map.count("Central") ? weight_map["Central"] : 1.f;
+      for (int member = 1; member <= 100; ++member) {
+        std::ostringstream pdf_name;
+        pdf_name << "PDF_" << std::setw(3) << std::setfill('0') << member;
+        weight_map[pdf_name.str()] =
+            nominal_systematic_weight * safe_lhe_pdf_weight(member);
+      }
+      weight_map["AlphaS_Down"] =
+          nominal_systematic_weight * safe_lhe_pdf_weight(101);
+      weight_map["AlphaS_Up"] =
+          nominal_systematic_weight * safe_lhe_pdf_weight(102);
+
+      if (PSWeight.valid() && nPSWeight >= 4) {
+        weight_map["FSR_Up"] =
+            nominal_systematic_weight *
+            GetPSWeight(MyCorrection::variation::nom,
+                        MyCorrection::variation::up);
+        weight_map["FSR_Down"] =
+            nominal_systematic_weight *
+            GetPSWeight(MyCorrection::variation::nom,
+                        MyCorrection::variation::down);
+        weight_map["ISR_Up"] =
+            nominal_systematic_weight *
+            GetPSWeight(MyCorrection::variation::up,
+                        MyCorrection::variation::nom);
+        weight_map["ISR_Down"] =
+            nominal_systematic_weight *
+            GetPSWeight(MyCorrection::variation::down,
+                        MyCorrection::variation::nom);
+      }
+    }
   }
 
   unordered_map<int, int> matched_genjet_idx = GenJetMatching(jets, MaterializeGenJets(AllGenJetViews), Rho_fixedGridRhoFastjetAll);
