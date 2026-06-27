@@ -82,10 +82,17 @@ void Tutorial_reco_tt::executeEvent() {
 
   for (const auto &syst_dummy : *systHelper) {
     executeEventFromParameter();
+    if (!IsDATA && systHelper->getCurrentSysName() == "Central") {
+      executeEventFromParameter("UnclusteredEnergy_Up",
+                                MyCorrection::variation::up);
+      executeEventFromParameter("UnclusteredEnergy_Down",
+                                MyCorrection::variation::down);
+    }
   }
 }
 
-void Tutorial_reco_tt::executeEventFromParameter() {
+void Tutorial_reco_tt::executeEventFromParameter(const TString &override_syst,
+                                                 MyCorrection::variation met_variation) {
 
   bool draw_include_pu_jets = false;
   bool correct_b_jet_pt = true;
@@ -95,7 +102,9 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   bool eval_top_pt_reweight_normalization = false;
   bool use_UParT_JEC = false;
 
-  const TString this_syst = systHelper->getCurrentSysName();
+  const bool use_met_unclustered = override_syst != "";
+  const TString this_syst =
+      use_met_unclustered ? override_syst : systHelper->getCurrentSysName();
   if (IsDATA && this_syst != "Central") return;
 
   if(eval_top_pt_reweight_normalization && MCSample.Contains("TT") && this_syst == "Central") {
@@ -141,7 +150,10 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   //==== MET Filter & Trigger
   if (!PassMetFilter(AllJetViews, ev)) return;
 
-  Particle METv = ev.GetMETVector(Event::MET_Type::PUPPI); 
+  Particle METv = use_met_unclustered
+                      ? ev.GetMETVector(Event::MET_Type::PUPPI, met_variation,
+                                        Event::MET_Syst::UE)
+                      : ev.GetMETVector(Event::MET_Type::PUPPI);
 
   //==== Lepton Selection
   std::vector<size_t> SelectedMuonIndices_id_only = SelectMuonIndices(AllMuonViews, this_muon_id, 15., 2.4);
@@ -459,7 +471,14 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     systHelper->assignWeightFunctionMap(weight_function_map);
     weight_map = systHelper->calculateWeight();
 
-    if (this_syst == "Central") {
+    if (use_met_unclustered) {
+      const float nominal_systematic_weight =
+          weight_map.count("Central") ? weight_map["Central"] : 1.f;
+      weight_map.clear();
+      weight_map[this_syst.Data()] = nominal_systematic_weight;
+    }
+
+    if (!use_met_unclustered && this_syst == "Central") {
       auto safe_lhe_pdf_weight = [&](int index) {
         if (!LHEPdfWeight.valid() || nLHEPdfWeight <= index) return 1.f;
         const float weight = LHEPdfWeight[index];
@@ -496,6 +515,25 @@ void Tutorial_reco_tt::executeEventFromParameter() {
             nominal_systematic_weight *
             GetPSWeight(MyCorrection::variation::down,
                         MyCorrection::variation::nom);
+      }
+
+      if (MCSample.Contains("powheg") && MCSample.Contains("TT")) {
+        const auto top_indices = GetTopAndAntiTopIndices(AllGenViews);
+        constexpr std::size_t npos = std::numeric_limits<std::size_t>::max();
+        if (top_indices[0] != npos && top_indices[1] != npos) {
+          const TLorentzVector first_copy_top =
+              AllGenViews[top_indices[0]].P4();
+          const TLorentzVector first_copy_antitop =
+              AllGenViews[top_indices[1]].P4();
+          weight_map["hdamp_Up"] =
+              nominal_systematic_weight *
+              myCorr->GethDampReweight(first_copy_top, first_copy_antitop,
+                                       MyCorrection::variation::up);
+          weight_map["hdamp_Down"] =
+              nominal_systematic_weight *
+              myCorr->GethDampReweight(first_copy_top, first_copy_antitop,
+                                       MyCorrection::variation::down);
+        }
       }
     }
   }
