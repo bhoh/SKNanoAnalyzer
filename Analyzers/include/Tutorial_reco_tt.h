@@ -17,9 +17,7 @@ public:
 
   void initializeAnalyzer();
   void executeEvent();
-  void executeEventFromParameter(const TString &override_syst = "",
-                                 MyCorrection::variation met_variation =
-                                     MyCorrection::variation::nom);
+  void executeEventFromParameter();
 
   TString IsoMuTriggerName;
   float TriggerSafePtCut;

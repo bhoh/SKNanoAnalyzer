@@ -82,17 +82,10 @@ void Tutorial_reco_tt::executeEvent() {
 
   for (const auto &syst_dummy : *systHelper) {
     executeEventFromParameter();
-    if (!IsDATA && systHelper->getCurrentSysName() == "Central") {
-      executeEventFromParameter("UnclusteredEnergy_Up",
-                                MyCorrection::variation::up);
-      executeEventFromParameter("UnclusteredEnergy_Down",
-                                MyCorrection::variation::down);
-    }
   }
 }
 
-void Tutorial_reco_tt::executeEventFromParameter(const TString &override_syst,
-                                                 MyCorrection::variation met_variation) {
+void Tutorial_reco_tt::executeEventFromParameter() {
 
   bool draw_include_pu_jets = false;
   bool correct_b_jet_pt = true;
@@ -102,9 +95,7 @@ void Tutorial_reco_tt::executeEventFromParameter(const TString &override_syst,
   bool eval_top_pt_reweight_normalization = false;
   bool use_UParT_JEC = false;
 
-  const bool use_met_unclustered = override_syst != "";
-  const TString this_syst =
-      use_met_unclustered ? override_syst : systHelper->getCurrentSysName();
+  const TString this_syst = systHelper->getCurrentSysName();
   if (IsDATA && this_syst != "Central") return;
 
   if(eval_top_pt_reweight_normalization && MCSample.Contains("TT") && this_syst == "Central") {
@@ -150,6 +141,15 @@ void Tutorial_reco_tt::executeEventFromParameter(const TString &override_syst,
   //==== MET Filter & Trigger
   if (!PassMetFilter(AllJetViews, ev)) return;
 
+  const bool use_met_unclustered = this_syst.Contains("UnclusteredEnergy");
+  MyCorrection::variation met_variation = MyCorrection::variation::nom;
+  if (use_met_unclustered) {
+    if (this_syst.Contains("Up")) {
+      met_variation = MyCorrection::variation::up;
+    } else if (this_syst.Contains("Down")) {
+      met_variation = MyCorrection::variation::down;
+    }
+  }
   Particle METv = use_met_unclustered
                       ? ev.GetMETVector(Event::MET_Type::PUPPI, met_variation,
                                         Event::MET_Syst::UE)
@@ -470,13 +470,6 @@ void Tutorial_reco_tt::executeEventFromParameter(const TString &override_syst,
 
     systHelper->assignWeightFunctionMap(weight_function_map);
     weight_map = systHelper->calculateWeight();
-
-    if (use_met_unclustered) {
-      const float nominal_systematic_weight =
-          weight_map.count("Central") ? weight_map["Central"] : 1.f;
-      weight_map.clear();
-      weight_map[this_syst.Data()] = nominal_systematic_weight;
-    }
 
     if (!use_met_unclustered && this_syst == "Central") {
       auto safe_lhe_pdf_weight = [&](int index) {
