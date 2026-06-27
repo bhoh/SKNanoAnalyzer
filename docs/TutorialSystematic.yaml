@@ -1,0 +1,42 @@
+systematics:
+  - syst: Central
+    source: "total"
+
+  - syst: JESTotal
+    source: "total"
+    evtLoopAgain: true
+
+  - syst: JER
+    source: "total"
+    evtLoopAgain: true
+
+  - syst: BFragmentation
+    source: "total"
+    evtLoopAgain: true
+
+  - syst: Muon_ID
+    target: Muon_ID
+
+  - syst: Muon_Iso
+    target: Muon_Iso
+
+  - syst: Muon_Trig
+    target: Muon_Trig
+
+  - syst: Electron_ID
+    target: Electron_ID
+
+  - syst: Electron_Reco
+    target: Electron_Reco
+
+  - syst: Electron_Trig
+    target: Electron_Trig
+
+  - syst: Pileup
+    target: Pileup
+
+  - syst: BTagSF
+    target: BTagSF
+
+  - syst: Top_Pt_Reweight
+    oneSided: true

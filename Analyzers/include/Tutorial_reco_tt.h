@@ -21,9 +21,14 @@ public:
 
   TString IsoMuTriggerName;
   float TriggerSafePtCut;
+  TString EleTriggerName;
+  float EleTriggerSafePtCut;
 
   RVec<Muon::MuonID> MuonIDs;
   RVec<TString> MuonIDISOSFKeys;
+  RVec<Electron::ElectronID> ElectronIDs;
+  RVec<TString> ElectronIDSFKeys;
+  RVec<TString> ElectronTriggerSFKeys;
 
   MuonViewCollection AllMuonViews;
   ElectronViewCollection AllElectronViews;

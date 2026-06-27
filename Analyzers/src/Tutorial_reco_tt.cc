@@ -14,6 +14,12 @@ void Tutorial_reco_tt::initializeAnalyzer() {
 
   MuonIDs = { Muon::MuonID::POG_TIGHT, Muon::MuonID::POG_MEDIUM_PROMPT, Muon::MuonID::POG_MVA_MU_TIGHT };
   MuonIDISOSFKeys = { "NUM_TightID_DEN_TrackerMuons", "NUM_TightPFIso_DEN_TightID", "NUM_MediumPromptID_DEN_TrackerMuons", "NUM_TightPFIso_DEN_MediumPromptID", "NUM_TightMvaMuID_DEN_TrackerMuons" };
+  ElectronIDs = { Electron::ElectronID::POG_TIGHT };
+  ElectronIDSFKeys = { "Tight" };
+  ElectronTriggerSFKeys = { "HLT_SF_Ele30_TightID" };
+
+  EleTriggerName = "HLT_Ele30_WPTight_Gsf";
+  EleTriggerSafePtCut = 32.;
 
   if (DataEra == "2016preVFP" || DataEra == "2016postVFP" ||
       DataEra == "2018") {
@@ -105,6 +111,9 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   TString this_muon_id_sf_key = MuonIDISOSFKeys[0];
   TString this_muon_iso_sf_key = MuonIDISOSFKeys[1];
   TString this_muon_trig_sf_key = "";
+  Electron::ElectronID this_electron_id = ElectronIDs[0];
+  TString this_electron_id_sf_key = ElectronIDSFKeys[0];
+  TString this_electron_trig_sf_key = ElectronTriggerSFKeys[0];
 
   if (use_pog_mva_tight_muon_id) {
     this_muon_id = MuonIDs[2];
@@ -127,7 +136,6 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   //==== MET Filter & Trigger
   if (!PassMetFilter(AllJetViews, ev)) return;
-  if (!(ev.PassTrigger(IsoMuTriggerName))) return;
 
   Particle METv = ev.GetMETVector(Event::MET_Type::PUPPI); 
 
@@ -140,12 +148,42 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   else{
     SelectedMuonIndices = SelectMuonIndices(AllMuonViews, SelectedMuonIndices_id_only, Muon::MuonID::POG_PFISO_TIGHT, 15., 2.4);
   }
-  std::vector<size_t> SelectedElectronIndices = SelectElectronIndices(AllElectronViews, Electron::ElectronID::POG_LOOSE, 15., 2.5);
+  std::vector<size_t> SelectedElectronVetoIndices = SelectElectronIndices(AllElectronViews, Electron::ElectronID::POG_LOOSE, 15., 2.5);
+  std::vector<size_t> SelectedElectronIndices = SelectElectronIndices(AllElectronViews, SelectedElectronVetoIndices, this_electron_id, 15., 2.5);
 
-  if (SelectedMuonIndices.size() + SelectedElectronIndices.size() != 1) return;
+  if (SelectedMuonIndices.size() + SelectedElectronVetoIndices.size() != 1) return;
+  if (SelectedMuonIndices.size() == 1 && SelectedElectronVetoIndices.size() != 0) return;
+  if (SelectedElectronIndices.size() == 1 && SelectedElectronVetoIndices.size() != 1) return;
 
   RVec<Muon> muons = MaterializeMuons(AllMuonViews, SelectedMuonIndices);
   RVec<Electron> electrons = MaterializeElectrons(AllElectronViews, SelectedElectronIndices);
+  sort(muons.begin(), muons.end(), PtComparing);
+  sort(electrons.begin(), electrons.end(), PtComparing);
+
+  bool is_muon_channel = muons.size() == 1;
+  bool is_electron_channel = electrons.size() == 1;
+  Lepton* selected_lepton = nullptr;
+  TString channel_name = "";
+  TString lepton_hist_name = "";
+
+  if (is_muon_channel) {
+    if (!(ev.PassTrigger(IsoMuTriggerName))) return;
+    if (muons.at(0).Pt() <= TriggerSafePtCut) return;
+    selected_lepton = &(muons.at(0));
+    channel_name = "Muon";
+    lepton_hist_name = "muon";
+  } else if (is_electron_channel) {
+    if (!(ev.PassTrigger(EleTriggerName))) return;
+    if (electrons.at(0).Pt() <= EleTriggerSafePtCut) return;
+    selected_lepton = &(electrons.at(0));
+    channel_name = "Electron";
+    lepton_hist_name = "electron";
+  } else {
+    return;
+  }
+
+  TString channel_dir = this_syst + "/" + channel_name;
+
   //==== Jet Selection
   MyCorrection::variation jes_variation = MyCorrection::variation::nom;
   MyCorrection::variation jer_variation = MyCorrection::variation::nom;
@@ -168,19 +206,15 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   RVec<Jet> jets = MaterializeJets(AllJetViews, SelectedJetIndices, jes_variation, jer_variation);
   jets = JetsVetoLeptonInside(jets, electrons, muons, 0.3);
   //==== Sorting
-  sort(muons.begin(), muons.end(), PtComparing);
   sort(jets.begin(), jets.end(), PtComparing);
 
   //==== Event selections
-  if (muons.size() != 1) return;
-  if (electrons.size() != 0) return;
-  if (muons.at(0).Pt() <= TriggerSafePtCut) return;
   if (jets.size() < 6) return;
   //if (METv.Pt() <= 20) return;
-  FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 1.5, 1., 6, 0., 6.);
+  FillHist(channel_dir + "/cutflow/cutflow_" + this_syst, 1.5, 1., 6, 0., 6.);
 
   if (!PassJetVetoMap(AllJetViews, AllMuonViews, "jetvetomap_fpix")) return;
-  FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 2.5, 1., 6, 0., 6.);
+  FillHist(channel_dir + "/cutflow/cutflow_" + this_syst, 2.5, 1., 6, 0., 6.);
   //==== B-Tagging (DeepJet Medium WP example)
   int NBJets = 0;
   int njets_pt30_non_btagged = 0;
@@ -293,7 +327,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   if (NBJets != 3) return;
   if (njets_pt30_non_btagged < 6) return;
-  FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 3.5, 1., 6, 0., 6.);
+  FillHist(channel_dir + "/cutflow/cutflow_" + this_syst, 3.5, 1., 6, 0., 6.);
 
   //==== Event Weight and Systematic Weight Map
   float base_weight = 1.;
@@ -328,6 +362,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     std::function<float(MyCorrection::variation, TString)> muon_id_lambda =
         [&](MyCorrection::variation syst, TString source) {
           (void)source;
+          if (!is_muon_channel) return 1.f;
           return myCorr->GetMuonIDSF(this_muon_id_sf_key, muons, syst);
         };
     weight_function_map["Muon_ID"] = muon_id_lambda;
@@ -335,6 +370,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     std::function<float(MyCorrection::variation, TString)> muon_iso_lambda =
         [&](MyCorrection::variation syst, TString source) {
           (void)source;
+          if (!is_muon_channel) return 1.f;
           if (use_pog_mva_tight_muon_id) {
             return 1.f;
           } else {
@@ -346,12 +382,39 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     std::function<float(MyCorrection::variation, TString)> muon_trig_lambda =
         [&](MyCorrection::variation syst, TString source) {
           (void)source;
-          if (use_pog_tight_muon_id) {
+          if (is_muon_channel && use_pog_tight_muon_id) {
             return myCorr->GetMuonTriggerSF(this_muon_trig_sf_key, muons, syst);
           }
           return 1.f;
         };
     weight_function_map["Muon_Trig"] = muon_trig_lambda;
+
+    std::function<float(MyCorrection::variation, TString)> electron_id_lambda =
+        [&](MyCorrection::variation syst, TString source) {
+          (void)source;
+          if (!is_electron_channel) return 1.f;
+          return myCorr->GetElectronIDSF(this_electron_id_sf_key, electrons, syst);
+        };
+    weight_function_map["Electron_ID"] = electron_id_lambda;
+
+    std::function<float(MyCorrection::variation, TString)> electron_reco_lambda =
+        [&](MyCorrection::variation syst, TString source) {
+          (void)source;
+          if (!is_electron_channel) return 1.f;
+          return myCorr->GetElectronRECOSF(electrons, syst);
+        };
+    weight_function_map["Electron_Reco"] = electron_reco_lambda;
+
+    std::function<float(MyCorrection::variation, TString)> electron_trig_lambda =
+        [&](MyCorrection::variation syst, TString source) {
+          (void)source;
+          if (!is_electron_channel) return 1.f;
+          const Electron &electron = electrons.at(0);
+          return myCorr->GetElectronTriggerSF(this_electron_trig_sf_key,
+                                             electron.Eta(), electron.Pt(),
+                                             electron.Phi(), syst);
+        };
+    weight_function_map["Electron_Trig"] = electron_trig_lambda;
 
     std::function<float(MyCorrection::variation, TString)> pileup_lambda =
         [&](MyCorrection::variation syst, TString source) {
@@ -402,8 +465,10 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     }
   }
 
-  float muon_pt0 = muons.at(0).Pt();
-  float muon_eta0 = muons.at(0).Eta();
+  float lepton_pt0 = selected_lepton->Pt();
+  float lepton_eta0 = selected_lepton->Eta();
+  float lepton_eta_min = is_muon_channel ? -2.4 : -2.5;
+  float lepton_eta_max = is_muon_channel ? 2.4 : 2.5;
   float jet_pt0 = jets.at(0).Pt();
   float jet_eta0 = jets.at(0).Eta();
   float njets = njets_pt30_non_btagged;
@@ -419,41 +484,41 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     float weight = base_weight * w.second;
 
     if (leading_btagged_jet_pt_before_reg >= 0.f) {
-      FillHist(this_syst + "/baseLineCut/btagged_jet_pt0_" + systName, leading_btagged_jet_pt_before_reg, weight, 80, 0., 400.);
+      FillHist(channel_dir + "/baseLineCut/btagged_jet_pt0_" + systName, leading_btagged_jet_pt_before_reg, weight, 80, 0., 400.);
     }
     if (leading_btagged_jet_pt_after_reg >= 0.f) {
-      FillHist(this_syst + "/baseLineCut/btagged_RegCorr_jet_pt0_" + systName, leading_btagged_jet_pt_after_reg, weight, 80, 0., 400.);
+      FillHist(channel_dir + "/baseLineCut/btagged_RegCorr_jet_pt0_" + systName, leading_btagged_jet_pt_after_reg, weight, 80, 0., 400.);
     }
 
-    FillHist(this_syst + "/baseLineCut/muon_pt0_" + systName, muon_pt0, weight, 80, 0., 400.);
-    FillHist(this_syst + "/baseLineCut/muon_eta0_" + systName, muon_eta0, weight, 40, -2.4, 2.4);
-    FillHist(this_syst + "/baseLineCut/njets_" + systName, njets, weight, 10, 0., 10.);
-    FillHist(this_syst + "/baseLineCut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
-    FillHist(this_syst + "/baseLineCut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
-    FillHist(this_syst + "/baseLineCut/jet_eta0_" + systName, jet_eta0, weight, 40, -5.2, 5.2);
-    FillHist(this_syst + "/baseLineCut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
-    FillHist(this_syst + "/baseLineCut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
+    FillHist(channel_dir + "/baseLineCut/" + lepton_hist_name + "_pt0_" + systName, lepton_pt0, weight, 80, 0., 400.);
+    FillHist(channel_dir + "/baseLineCut/" + lepton_hist_name + "_eta0_" + systName, lepton_eta0, weight, 40, lepton_eta_min, lepton_eta_max);
+    FillHist(channel_dir + "/baseLineCut/njets_" + systName, njets, weight, 10, 0., 10.);
+    FillHist(channel_dir + "/baseLineCut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
+    FillHist(channel_dir + "/baseLineCut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
+    FillHist(channel_dir + "/baseLineCut/jet_eta0_" + systName, jet_eta0, weight, 40, -5.2, 5.2);
+    FillHist(channel_dir + "/baseLineCut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
+    FillHist(channel_dir + "/baseLineCut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
 
     if (!IsDATA && draw_include_pu_jets) {
       if(isPileupJet){
-        FillHist("Pileup/" + this_syst + "/baseLineCut/muon_pt0_" + systName, muon_pt0, weight, 80, 0., 400.);
-        FillHist("Pileup/" + this_syst + "/baseLineCut/muon_eta0_" + systName, muon_eta0, weight, 40, -2.4, 2.4);
-        FillHist("Pileup/" + this_syst + "/baseLineCut/njets_" + systName, njets, weight, 10, 0., 10.);
-        FillHist("Pileup/" + this_syst + "/baseLineCut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
-        FillHist("Pileup/" + this_syst + "/baseLineCut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
-        FillHist("Pileup/" + this_syst + "/baseLineCut/jet_eta0_" + systName, jet_eta0, weight, 40, -2.4, 2.4);
-        FillHist("Pileup/" + this_syst + "/baseLineCut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
-        FillHist("Pileup/" + this_syst + "/baseLineCut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
+        FillHist("Pileup/" + channel_dir + "/baseLineCut/" + lepton_hist_name + "_pt0_" + systName, lepton_pt0, weight, 80, 0., 400.);
+        FillHist("Pileup/" + channel_dir + "/baseLineCut/" + lepton_hist_name + "_eta0_" + systName, lepton_eta0, weight, 40, lepton_eta_min, lepton_eta_max);
+        FillHist("Pileup/" + channel_dir + "/baseLineCut/njets_" + systName, njets, weight, 10, 0., 10.);
+        FillHist("Pileup/" + channel_dir + "/baseLineCut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
+        FillHist("Pileup/" + channel_dir + "/baseLineCut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
+        FillHist("Pileup/" + channel_dir + "/baseLineCut/jet_eta0_" + systName, jet_eta0, weight, 40, -2.4, 2.4);
+        FillHist("Pileup/" + channel_dir + "/baseLineCut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
+        FillHist("Pileup/" + channel_dir + "/baseLineCut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
       }
       else{
-        FillHist("noPileup/" + this_syst + "/baseLineCut/muon_pt0_" + systName, muon_pt0, weight, 80, 0., 400.);
-        FillHist("noPileup/" + this_syst + "/baseLineCut/muon_eta0_" + systName, muon_eta0, weight, 40, -2.4, 2.4);
-        FillHist("noPileup/" + this_syst + "/baseLineCut/njets_" + systName, njets, weight, 10, 0., 10.);
-        FillHist("noPileup/" + this_syst + "/baseLineCut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
-        FillHist("noPileup/" + this_syst + "/baseLineCut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
-        FillHist("noPileup/" + this_syst + "/baseLineCut/jet_eta0_" + systName, jet_eta0, weight, 40, -2.4, 2.4);
-        FillHist("noPileup/" + this_syst + "/baseLineCut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
-        FillHist("noPileup/" + this_syst + "/baseLineCut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
+        FillHist("noPileup/" + channel_dir + "/baseLineCut/" + lepton_hist_name + "_pt0_" + systName, lepton_pt0, weight, 80, 0., 400.);
+        FillHist("noPileup/" + channel_dir + "/baseLineCut/" + lepton_hist_name + "_eta0_" + systName, lepton_eta0, weight, 40, lepton_eta_min, lepton_eta_max);
+        FillHist("noPileup/" + channel_dir + "/baseLineCut/njets_" + systName, njets, weight, 10, 0., 10.);
+        FillHist("noPileup/" + channel_dir + "/baseLineCut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
+        FillHist("noPileup/" + channel_dir + "/baseLineCut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
+        FillHist("noPileup/" + channel_dir + "/baseLineCut/jet_eta0_" + systName, jet_eta0, weight, 40, -2.4, 2.4);
+        FillHist("noPileup/" + channel_dir + "/baseLineCut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
+        FillHist("noPileup/" + channel_dir + "/baseLineCut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
       }
     }
   }
@@ -478,7 +543,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   // Require at least two W candidates and two top-b candidates.
   if(had_W_candidates.size() < 2 || top_b_jet_candidates.size() < 2) return;
-  FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 4.5, 1., 6, 0., 6.);
+  FillHist(channel_dir + "/cutflow/cutflow_" + this_syst, 4.5, 1., 6, 0., 6.);
 
   //==== Combinatorics
   // Up to six combinations: C(nW, 2) W-jet pairs times two b-jet assignments, with nW <= 3.
@@ -490,7 +555,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     for(unsigned int w2 = w1 + 1; w2 < had_W_candidates.size(); w2++){
       // Loop over the 2 ways to assign the b-jets (hadronic vs leptonic)
       for(unsigned int b_idx = 0; b_idx < 2; b_idx++){
-        combinatorics[comb_idx].lepton            = &(muons.at(0));
+        combinatorics[comb_idx].lepton            = selected_lepton;
         combinatorics[comb_idx].jets              = &jets;
         combinatorics[comb_idx].met               = &METv;
         combinatorics[comb_idx].had_W_jet_idx_1   = had_W_candidates.at(w1);
@@ -517,40 +582,40 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     TString systName = w.first;
     float weight = base_weight * w.second;
 
-    FillHist(this_syst + "/noChi2Cut/had_W_mass_" + systName, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
-    FillHist(this_syst + "/noChi2Cut/had_top_mass_" + systName, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
-    FillHist(this_syst + "/noChi2Cut/lep_W_mass_" + systName, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
-    FillHist(this_syst + "/noChi2Cut/lep_top_mass_" + systName, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
-    FillHist(this_syst + "/noChi2Cut/chi2_" + systName, best_combinatoric->best_chi2, weight, 50, 0., 100000.);
-    FillHist(this_syst + "/noChi2Cut/njets_" + systName, njets, weight, 10, 0., 10.);
+    FillHist(channel_dir + "/noChi2Cut/had_W_mass_" + systName, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
+    FillHist(channel_dir + "/noChi2Cut/had_top_mass_" + systName, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
+    FillHist(channel_dir + "/noChi2Cut/lep_W_mass_" + systName, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
+    FillHist(channel_dir + "/noChi2Cut/lep_top_mass_" + systName, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
+    FillHist(channel_dir + "/noChi2Cut/chi2_" + systName, best_combinatoric->best_chi2, weight, 50, 0., 100000.);
+    FillHist(channel_dir + "/noChi2Cut/njets_" + systName, njets, weight, 10, 0., 10.);
 
     if(best_combinatoric->best_chi2 < 2e3) {
-      FillHist(this_syst + "/Chi2Cut/had_W_mass_" + systName, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
-      FillHist(this_syst + "/Chi2Cut/had_top_mass_" + systName, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
-      FillHist(this_syst + "/Chi2Cut/lep_W_mass_" + systName, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
-      FillHist(this_syst + "/Chi2Cut/lep_top_mass_" + systName, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
-      FillHist(this_syst + "/Chi2Cut/chi2_" + systName, best_combinatoric->best_chi2, weight, 50, 0., 2000.);
+      FillHist(channel_dir + "/Chi2Cut/had_W_mass_" + systName, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
+      FillHist(channel_dir + "/Chi2Cut/had_top_mass_" + systName, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
+      FillHist(channel_dir + "/Chi2Cut/lep_W_mass_" + systName, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
+      FillHist(channel_dir + "/Chi2Cut/lep_top_mass_" + systName, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
+      FillHist(channel_dir + "/Chi2Cut/chi2_" + systName, best_combinatoric->best_chi2, weight, 50, 0., 2000.);
 
-      FillHist(this_syst + "/Chi2Cut/muon_pt0_" + systName, muon_pt0, weight, 80, 0., 400.);
-      FillHist(this_syst + "/Chi2Cut/muon_eta0_" + systName, muon_eta0, weight, 40, -2.4, 2.4);
-      FillHist(this_syst + "/Chi2Cut/njets_" + systName, njets, weight, 10, 0., 10.);
-      FillHist(this_syst + "/Chi2Cut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
-      FillHist(this_syst + "/Chi2Cut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
-      FillHist(this_syst + "/Chi2Cut/jet_eta0_" + systName, jet_eta0, weight, 40, -5.2, 5.2);
-      FillHist(this_syst + "/Chi2Cut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
-      FillHist(this_syst + "/Chi2Cut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
+      FillHist(channel_dir + "/Chi2Cut/" + lepton_hist_name + "_pt0_" + systName, lepton_pt0, weight, 80, 0., 400.);
+      FillHist(channel_dir + "/Chi2Cut/" + lepton_hist_name + "_eta0_" + systName, lepton_eta0, weight, 40, lepton_eta_min, lepton_eta_max);
+      FillHist(channel_dir + "/Chi2Cut/njets_" + systName, njets, weight, 10, 0., 10.);
+      FillHist(channel_dir + "/Chi2Cut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
+      FillHist(channel_dir + "/Chi2Cut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
+      FillHist(channel_dir + "/Chi2Cut/jet_eta0_" + systName, jet_eta0, weight, 40, -5.2, 5.2);
+      FillHist(channel_dir + "/Chi2Cut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
+      FillHist(channel_dir + "/Chi2Cut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
 
       if (leading_btagged_jet_pt_before_reg >= 0.f) {
-        FillHist(this_syst + "/Chi2Cut/btagged_jet_pt0_" + systName, leading_btagged_jet_pt_before_reg, weight, 80, 0., 400.);
+        FillHist(channel_dir + "/Chi2Cut/btagged_jet_pt0_" + systName, leading_btagged_jet_pt_before_reg, weight, 80, 0., 400.);
       }
       if (leading_btagged_jet_pt_after_reg >= 0.f) {
-        FillHist(this_syst + "/Chi2Cut/btagged_RegCorr_jet_pt0_" + systName, leading_btagged_jet_pt_after_reg, weight, 80, 0., 400.);
+        FillHist(channel_dir + "/Chi2Cut/btagged_RegCorr_jet_pt0_" + systName, leading_btagged_jet_pt_after_reg, weight, 80, 0., 400.);
       }
     }
   }
 
   if(best_combinatoric->best_chi2 < 2e3) {
-    FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 5.5, 1., 6, 0., 6.);
+    FillHist(channel_dir + "/cutflow/cutflow_" + this_syst, 5.5, 1., 6, 0., 6.);
   }
 }
 
