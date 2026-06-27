@@ -49,9 +49,9 @@ void Tutorial_reco_tt::initializeAnalyzer() {
   if (IsDATA) {
     systHelper = std::make_unique<SystematicHelper>(SKNANO_HOME + "/docs/noSyst.yaml", DataStream, DataEra);
   } else {
-    //systHelper = std::make_unique<SystematicHelper>(SKNANO_HOME + "/docs/ExampleSystematic.yaml", MCSample, DataEra);
-    systHelper = std::make_unique<SystematicHelper>(SKNANO_HOME + "/docs/JesTotal.yaml", MCSample, DataEra);
+    systHelper = std::make_unique<SystematicHelper>(SKNANO_HOME + "/docs/TutorialSystematic.yaml", MCSample, DataEra);
   }
+
 }
 
 void Tutorial_reco_tt::executeEvent() {
@@ -89,14 +89,15 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   if (IsDATA && this_syst != "Central") return;
 
   if(eval_top_pt_reweight_normalization && MCSample.Contains("TT") && this_syst == "Central") {
-    auto [firstTopIdx, firstAntiTopIdx, lastTopIdx, lastAntiTopIdx] =
-    GetTopAndAntiTopIndices(AllGenViews);
-
-    const TLorentzVector top = AllGenViews[firstTopIdx].P4();
-    const TLorentzVector antiTop = AllGenViews[firstAntiTopIdx].P4();
-    float w_toppt = myCorr->GetTopPtReweight(top, antiTop);
-    FillHist(this_syst + "/count/w_toppt" + this_syst, 0.5, 1., 2, 0., 2.);
-    FillHist(this_syst + "/count/w_toppt" + this_syst, 1.5, w_toppt, 2, 0., 2.);
+    const auto top_indices = GetTopAndAntiTopIndices(AllGenViews);
+    constexpr std::size_t npos = std::numeric_limits<std::size_t>::max();
+    if (top_indices[0] != npos && top_indices[1] != npos) {
+      const TLorentzVector top = AllGenViews[top_indices[0]].P4();
+      const TLorentzVector antiTop = AllGenViews[top_indices[1]].P4();
+      float w_toppt = myCorr->GetTopPtReweight(top, antiTop);
+      FillHist(this_syst + "/count/w_toppt" + this_syst, 0.5, 1., 2, 0., 2.);
+      FillHist(this_syst + "/count/w_toppt" + this_syst, 1.5, w_toppt, 2, 0., 2.);
+    }
   }
 
 
@@ -147,23 +148,24 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   RVec<Electron> electrons = MaterializeElectrons(AllElectronViews, SelectedElectronIndices);
   //==== Jet Selection
   MyCorrection::variation jes_variation = MyCorrection::variation::nom;
-  MyCorrection::variation btag_jes_variation = MyCorrection::variation::nom;
-  TString btag_source = "total";
+  MyCorrection::variation jer_variation = MyCorrection::variation::nom;
   if (this_syst.Contains("JESTotal")) {
     ApplyJetScaleVariation(AllJetViews, "total");
     if (this_syst.Contains("Up")) {
       jes_variation = MyCorrection::variation::up;
-      btag_jes_variation = MyCorrection::variation::nom;
-      btag_source = "total";
     } else if (this_syst.Contains("Down")) {
       jes_variation = MyCorrection::variation::down;
-      btag_jes_variation = MyCorrection::variation::nom;
-      btag_source = "total";
+    }
+  } else if (this_syst.Contains("JER")) {
+    if (this_syst.Contains("Up")) {
+      jer_variation = MyCorrection::variation::up;
+    } else if (this_syst.Contains("Down")) {
+      jer_variation = MyCorrection::variation::down;
     }
   }
   auto jet_id = apply_pu_id ? Jet::JetID::PUID_LOOSE : Jet::JetID::TIGHT;
-  std::vector<size_t> SelectedJetIndices = SelectJetIndices(AllJetViews, jet_id, 0., 5.191, jes_variation, MyCorrection::variation::nom);
-  RVec<Jet> jets = MaterializeJets(AllJetViews, SelectedJetIndices, jes_variation, MyCorrection::variation::nom);
+  std::vector<size_t> SelectedJetIndices = SelectJetIndices(AllJetViews, jet_id, 0., 5.191, jes_variation, jer_variation);
+  RVec<Jet> jets = MaterializeJets(AllJetViews, SelectedJetIndices, jes_variation, jer_variation);
   jets = JetsVetoLeptonInside(jets, electrons, muons, 0.3);
   //==== Sorting
   sort(muons.begin(), muons.end(), PtComparing);
@@ -183,6 +185,8 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   int NBJets = 0;
   int njets_pt30_non_btagged = 0;
   float btag_wp_cut = myCorr->GetBTaggingWP();
+  float leading_btagged_jet_pt_before_reg = -1.f;
+  float leading_btagged_jet_pt_after_reg = -1.f;
 
 
   // Loop through the jets and apply corrections to b-tagged ones
@@ -192,10 +196,12 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     
     // Check if the jet is b-tagged
     if (this_discr > btag_wp_cut) {
-        
+
+        if (leading_btagged_jet_pt_before_reg < 0.f) {
+          leading_btagged_jet_pt_before_reg = static_cast<float>(jet.Pt());
+        }
         double current_pt  = jet.Pt();
         double raw_pt = jet.GetRawPt();
-        double unsmeared_pt = jet.GetUnsmearedP4().Pt();
         double current_eta = jet.Eta();
         double current_phi = jet.Phi();
         double current_m   = jet.M();
@@ -222,16 +228,29 @@ void Tutorial_reco_tt::executeEventFromParameter() {
         }
 
         // Update the LorentzVector with the new pT
+        if (this_syst.Contains("BFragmentation")) {
+          double bfrag_scale = this_syst.Contains("Up") ? 1.01 : 0.99;
+          modified_pt *= bfrag_scale;
+          modified_m *= bfrag_scale;
+          current_pt *= bfrag_scale;
+          current_m *= bfrag_scale;
+        }
+
         if(correct_b_jet_pt){
           jet.SetPtEtaPhiM(modified_pt, current_eta, current_phi, modified_m);
         }
-        
+        else if (this_syst.Contains("BFragmentation")) {
+          jet.SetPtEtaPhiM(current_pt, current_eta, current_phi, current_m);
+        }
+        if (leading_btagged_jet_pt_after_reg < 0.f) {
+          leading_btagged_jet_pt_after_reg = static_cast<float>(jet.Pt());
+        }
+
     }
     else{
       if(use_UParT_JEC){
         double current_pt  = jet.Pt();
         double raw_pt = jet.GetRawPt();
-        double unsmeared_pt = jet.GetUnsmearedP4().Pt();
         double current_eta = jet.Eta();
         double current_phi = jet.Phi();
         double current_m   = jet.M();
@@ -276,99 +295,102 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   if (njets_pt30_non_btagged < 6) return;
   FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 3.5, 1., 6, 0., 6.);
 
-  //==== Event Weight
-  float weight = 1.;
-  if (!IsDATA) {
-    weight *= MCweight();
-    weight *= ev.GetTriggerLumi("Full");
-    // muon official trigger SF is not available yet.
-    float muon_id_sf = myCorr->GetMuonIDSF(this_muon_id_sf_key, muons, MyCorrection::variation::nom);
-    weight *= muon_id_sf;
-    float muon_iso_sf = 1;
-    if (use_pog_mva_tight_muon_id) {
-      // isolation SF is already included in the ID SF for the MVA tight WP, so we don't apply it separately
-    }
-    else {
-      muon_iso_sf = myCorr->GetMuonIDSF(this_muon_iso_sf_key, muons, MyCorrection::variation::nom);
-      weight *= muon_iso_sf;
-    }
-    if (use_pog_tight_muon_id) {
-        float muon_trig_sf = myCorr->GetMuonTriggerSF(this_muon_trig_sf_key, muons, MyCorrection::variation::nom);
-        weight *= muon_trig_sf;
-    }
-    float pu_weight = myCorr->GetPUWeight(ev.nTrueInt(), MyCorrection::variation::nom);
-    weight *= pu_weight;
-    RVec<Jet> jets_2p5 = RVec<Jet>();
-    for (auto& jet : jets) {
-      if (abs(jet.Eta()) < 2.499 && jet.Pt() > 20.) {
-        jets_2p5.push_back(jet);
-      }
-    }
-    float btag_sf = myCorr->GetBTaggingSF(jets_2p5, 
-            JetTagging::JetFlavTagger::ParT, 
-            JetTagging::JetFlavTaggerWP::Medium,
-            JetTagging::JetTaggingSFMethod::comb,
-            btag_jes_variation, btag_source
-        );
-    weight *= btag_sf;
+  //==== Event Weight and Systematic Weight Map
+  float base_weight = 1.;
+  unordered_map<std::string, float> weight_map;
+
+  if (IsDATA) {
+    weight_map["Central"] = 1.f;
+  } else {
+    base_weight *= MCweight();
+    base_weight *= ev.GetTriggerLumi("Full");
 
     if (MCSample.Contains("powheg") && MCSample.Contains("TT")) {
-      auto [firstTopIdx, firstAntiTopIdx, lastTopIdx, lastAntiTopIdx] =
-          GetTopAndAntiTopIndices(AllGenViews);
-
-      const TLorentzVector top = AllGenViews[firstTopIdx].P4();
-      const TLorentzVector antiTop = AllGenViews[firstAntiTopIdx].P4();
-      float w_toppt = myCorr->GetTopPtReweight(top, antiTop);
-      weight *= w_toppt * 1.2360; // 1.2360 for top_pt_reweight normalization correction
-
-      auto [topIdx, WTopIdx, BHadTopIdx, antiTopIdx, WAntiTopIdx,
-          BHadAntiTopIdx] = myCorr->GetGenIdxofTopDecayProducts(AllGenViews);
-      float weight_bfrag = 1.f;
-      float weight_bfrag_up = 1.f;
-      float xb = -1.f;
-      float xb_anti = -1.f;
-      if ((BHadTopIdx == std::numeric_limits<std::size_t>::max()) ||
-          (BHadAntiTopIdx == std::numeric_limits<std::size_t>::max())) {
-        weight_bfrag = -1.f;
-        weight_bfrag_up = -1.f;
-      } else {
-        auto LastCopyTop = AllGenViews[topIdx].P4();
-        auto LastCopyAntiTop = AllGenViews[antiTopIdx].P4();
-        auto LastCopyWPlus = AllGenViews[WTopIdx].P4();
-        auto LastCopyWMinus = AllGenViews[WAntiTopIdx].P4();
-        auto FirstCopyAntiTopBHad = AllGenViews[BHadAntiTopIdx].P4();
-        auto FirstCopyTopBHad = AllGenViews[BHadTopIdx].P4();
-
-        const float x_e_top =
-            2 * FirstCopyTopBHad * LastCopyTop / LastCopyTop.M2();
-        const float x_e_antitop =
-            2 * FirstCopyAntiTopBHad * LastCopyAntiTop / LastCopyAntiTop.M2();
-        const float w_top = LastCopyWPlus.M2() / LastCopyTop.M2();
-        const float w_antitop = LastCopyWMinus.M2() / LastCopyAntiTop.M2();
-        const float clip_value = 1.2f;
-        const float x_b_top = std::min(x_e_top / (1 - w_top), clip_value);
-        const float x_b_antitop =
-            std::min(x_e_antitop / (1 - w_antitop), clip_value);
-        xb = x_b_top;
-        xb_anti = x_b_antitop;
-
-        weight_bfrag = myCorr->GetBFragReweight(
-            LastCopyTop, LastCopyAntiTop, LastCopyWPlus, LastCopyWMinus,
-            FirstCopyTopBHad, FirstCopyAntiTopBHad, MyCorrection::variation::nom);
-        weight_bfrag_up = myCorr->GetBFragReweight(
-            LastCopyTop, LastCopyAntiTop, LastCopyWPlus, LastCopyWMinus,
-            FirstCopyTopBHad, FirstCopyAntiTopBHad, MyCorrection::variation::up);
-      }
-      //weight *= weight_bfrag;
-
-      if(genTtbarId%100>=51 && genTtbarId%100<=55){
-        weight *= 1.36;
-      }
-      else if(genTtbarId%100>=41 && genTtbarId%100<=45){
-        weight *= 1.11;
+      base_weight *= 1.2360; // top_pt_reweight normalization factor
+      if (genTtbarId % 100 >= 51 && genTtbarId % 100 <= 55) {
+        base_weight *= 1.36;
+      } else if (genTtbarId % 100 >= 41 && genTtbarId % 100 <= 45) {
+        base_weight *= 1.11;
       }
     }
 
+    // Assign weight functions to SystematicHelper
+    unordered_map<std::string, std::variant<std::function<float(MyCorrection::variation, TString)>, std::function<float()>>> weight_function_map;
+
+    std::function<float(MyCorrection::variation, TString)> central_lambda =
+        [&](MyCorrection::variation syst, TString source) {
+          (void)syst;
+          (void)source;
+          return 1.f;
+        };
+    weight_function_map["Central"] = central_lambda;
+
+    std::function<float(MyCorrection::variation, TString)> muon_id_lambda =
+        [&](MyCorrection::variation syst, TString source) {
+          (void)source;
+          return myCorr->GetMuonIDSF(this_muon_id_sf_key, muons, syst);
+        };
+    weight_function_map["Muon_ID"] = muon_id_lambda;
+
+    std::function<float(MyCorrection::variation, TString)> muon_iso_lambda =
+        [&](MyCorrection::variation syst, TString source) {
+          (void)source;
+          if (use_pog_mva_tight_muon_id) {
+            return 1.f;
+          } else {
+            return myCorr->GetMuonIDSF(this_muon_iso_sf_key, muons, syst);
+          }
+        };
+    weight_function_map["Muon_Iso"] = muon_iso_lambda;
+
+    std::function<float(MyCorrection::variation, TString)> muon_trig_lambda =
+        [&](MyCorrection::variation syst, TString source) {
+          (void)source;
+          if (use_pog_tight_muon_id) {
+            return myCorr->GetMuonTriggerSF(this_muon_trig_sf_key, muons, syst);
+          }
+          return 1.f;
+        };
+    weight_function_map["Muon_Trig"] = muon_trig_lambda;
+
+    std::function<float(MyCorrection::variation, TString)> pileup_lambda =
+        [&](MyCorrection::variation syst, TString source) {
+          return myCorr->GetPUWeight(ev.nTrueInt(), syst, source);
+        };
+    weight_function_map["Pileup"] = pileup_lambda;
+
+    std::function<float(MyCorrection::variation, TString)> btag_lambda =
+        [&](MyCorrection::variation syst, TString source) {
+          RVec<Jet> jets_2p5 = RVec<Jet>();
+          for (auto& jet : jets) {
+            if (abs(jet.Eta()) < 2.499 && jet.Pt() > 20.) {
+              jets_2p5.push_back(jet);
+            }
+          }
+          return myCorr->GetBTaggingSF(jets_2p5,
+              JetTagging::JetFlavTagger::ParT,
+              JetTagging::JetFlavTaggerWP::Medium,
+              JetTagging::JetTaggingSFMethod::comb,
+              syst, source
+          );
+        };
+    weight_function_map["BTagSF"] = btag_lambda;
+
+    std::function<float()> toppt_lambda = [&]() {
+      if (MCSample.Contains("powheg") && MCSample.Contains("TT")) {
+        const auto top_indices = GetTopAndAntiTopIndices(AllGenViews);
+        constexpr std::size_t npos = std::numeric_limits<std::size_t>::max();
+        if (top_indices[0] == npos || top_indices[1] == npos) return 1.f;
+        const TLorentzVector top = AllGenViews[top_indices[0]].P4();
+        const TLorentzVector antiTop = AllGenViews[top_indices[1]].P4();
+        return myCorr->GetTopPtReweight(top, antiTop);
+      }
+      return 1.f;
+    };
+    weight_function_map["Top_Pt_Reweight"] = toppt_lambda;
+
+    systHelper->assignWeightFunctionMap(weight_function_map);
+    weight_map = systHelper->calculateWeight();
   }
 
   unordered_map<int, int> matched_genjet_idx = GenJetMatching(jets, MaterializeGenJets(AllGenJetViews), Rho_fixedGridRhoFastjetAll);
@@ -380,29 +402,6 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     }
   }
 
-  for (auto& jet : jets) {
-    // Get the b-tagging discriminator score
-    double this_discr = jet.GetTaggerResult(JetTagging::JetFlavTagger::ParT, JetTagging::JetFlavTaggerScoreType::B);
-    
-    // Check if the jet is b-tagged
-    if (this_discr > btag_wp_cut) {
-      FillHist(this_syst + "/baseLineCut/btagged_jet_pt0_" + this_syst, float(jet.Pt()), weight, 80, 0., 400.);
-      break;
-    }
-  }
-
-
-  for (auto& jet : jets) {
-    // Get the b-tagging discriminator score
-    double this_discr = jet.GetTaggerResult(JetTagging::JetFlavTagger::ParT, JetTagging::JetFlavTaggerScoreType::B);
-    
-    // Check if the jet is b-tagged
-    if (this_discr > btag_wp_cut) {
-      FillHist(this_syst + "/baseLineCut/btagged_RegCorr_jet_pt0_" + this_syst, float(jet.Pt()), weight, 80, 0., 400.);
-      break;
-    }
-  }
-
   float muon_pt0 = muons.at(0).Pt();
   float muon_eta0 = muons.at(0).Eta();
   float jet_pt0 = jets.at(0).Pt();
@@ -410,50 +409,60 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   float njets = njets_pt30_non_btagged;
   float MET_pt = METv.Pt();
   float MET_phi = METv.Phi();
-  FillHist(this_syst + "/baseLineCut/muon_pt0_" + this_syst, muon_pt0, weight, 80, 0., 400.);
-  FillHist(this_syst + "/baseLineCut/muon_eta0_" + this_syst, muon_eta0, weight, 40, -2.4, 2.4);
-  FillHist(this_syst + "/baseLineCut/njets_" + this_syst, njets, weight, 10, 0., 10.);
 
-
-  std::vector<size_t> SelectedJetIndices2 = SelectJetIndices(AllJetViews, jet_id, 40., 2.4, jes_variation, MyCorrection::variation::nom);
-  RVec<Jet> jets2 = MaterializeJets(AllJetViews, SelectedJetIndices2, jes_variation, MyCorrection::variation::nom);
+  std::vector<size_t> SelectedJetIndices2 = SelectJetIndices(AllJetViews, jet_id, 40., 2.4, jes_variation, jer_variation);
+  RVec<Jet> jets2 = MaterializeJets(AllJetViews, SelectedJetIndices2, jes_variation, jer_variation);
   jets2 = JetsVetoLeptonInside(jets2, electrons, muons, 0.3);
-  FillHist(this_syst + "/baseLineCut/njets2_" + this_syst, float(jets2.size()), weight, 10, 0., 10.);
-  FillHist(this_syst + "/baseLineCut/jet_pt0_" + this_syst, jet_pt0, weight, 80, 0., 400.);
-  FillHist(this_syst + "/baseLineCut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -5.2, 5.2);
-  FillHist(this_syst + "/baseLineCut/MET_pt_" + this_syst, MET_pt, weight, 40, 0., 200.);
-  FillHist(this_syst + "/baseLineCut/MET_phi_" + this_syst, MET_phi, weight, 40, -3.14, 3.14);
 
-  if (!IsDATA && draw_include_pu_jets) {
-    if(isPileupJet){
-      FillHist("Pileup/" + this_syst + "/baseLineCut/muon_pt0_" + this_syst, muon_pt0, weight, 80, 0., 400.);
-      FillHist("Pileup/" + this_syst + "/baseLineCut/muon_eta0_" + this_syst, muon_eta0, weight, 40, -2.4, 2.4);
-      FillHist("Pileup/" + this_syst + "/baseLineCut/njets_" + this_syst, njets, weight, 10, 0., 10.);
-      FillHist("Pileup/" + this_syst + "/baseLineCut/njets2_" + this_syst, float(jets2.size()), weight, 10, 0., 10.);
-      FillHist("Pileup/" + this_syst + "/baseLineCut/jet_pt0_" + this_syst, jet_pt0, weight, 80, 0., 400.);
-      FillHist("Pileup/" + this_syst + "/baseLineCut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -2.4, 2.4);
-      FillHist("Pileup/" + this_syst + "/baseLineCut/MET_pt_" + this_syst, MET_pt, weight, 40, 0., 200.);
-      FillHist("Pileup/" + this_syst + "/baseLineCut/MET_phi_" + this_syst, MET_phi, weight, 40, -3.14, 3.14); 
+  for (const auto &w : weight_map) {
+    TString systName = w.first;
+    float weight = base_weight * w.second;
+
+    if (leading_btagged_jet_pt_before_reg >= 0.f) {
+      FillHist(this_syst + "/baseLineCut/btagged_jet_pt0_" + systName, leading_btagged_jet_pt_before_reg, weight, 80, 0., 400.);
     }
-    else{
-      FillHist("noPileup/" + this_syst + "/baseLineCut/muon_pt0_" + this_syst, muon_pt0, weight, 80, 0., 400.);
-      FillHist("noPileup/" + this_syst + "/baseLineCut/muon_eta0_" + this_syst, muon_eta0, weight, 40, -2.4, 2.4);
-      FillHist("noPileup/" + this_syst + "/baseLineCut/njets_" + this_syst, njets, weight, 10, 0., 10.);
-      FillHist("noPileup/" + this_syst + "/baseLineCut/njets2_" + this_syst, float(jets2.size()), weight, 10, 0., 10.);
-      FillHist("noPileup/" + this_syst + "/baseLineCut/jet_pt0_" + this_syst, jet_pt0, weight, 80, 0., 400.);
-      FillHist("noPileup/" + this_syst + "/baseLineCut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -2.4, 2.4);
-      FillHist("noPileup/" + this_syst + "/baseLineCut/MET_pt_" + this_syst, MET_pt, weight, 40, 0., 200.);
-      FillHist("noPileup/" + this_syst + "/baseLineCut/MET_phi_" + this_syst, MET_phi, weight, 40, -3.14, 3.14); 
-     
+    if (leading_btagged_jet_pt_after_reg >= 0.f) {
+      FillHist(this_syst + "/baseLineCut/btagged_RegCorr_jet_pt0_" + systName, leading_btagged_jet_pt_after_reg, weight, 80, 0., 400.);
+    }
+
+    FillHist(this_syst + "/baseLineCut/muon_pt0_" + systName, muon_pt0, weight, 80, 0., 400.);
+    FillHist(this_syst + "/baseLineCut/muon_eta0_" + systName, muon_eta0, weight, 40, -2.4, 2.4);
+    FillHist(this_syst + "/baseLineCut/njets_" + systName, njets, weight, 10, 0., 10.);
+    FillHist(this_syst + "/baseLineCut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
+    FillHist(this_syst + "/baseLineCut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
+    FillHist(this_syst + "/baseLineCut/jet_eta0_" + systName, jet_eta0, weight, 40, -5.2, 5.2);
+    FillHist(this_syst + "/baseLineCut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
+    FillHist(this_syst + "/baseLineCut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
+
+    if (!IsDATA && draw_include_pu_jets) {
+      if(isPileupJet){
+        FillHist("Pileup/" + this_syst + "/baseLineCut/muon_pt0_" + systName, muon_pt0, weight, 80, 0., 400.);
+        FillHist("Pileup/" + this_syst + "/baseLineCut/muon_eta0_" + systName, muon_eta0, weight, 40, -2.4, 2.4);
+        FillHist("Pileup/" + this_syst + "/baseLineCut/njets_" + systName, njets, weight, 10, 0., 10.);
+        FillHist("Pileup/" + this_syst + "/baseLineCut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
+        FillHist("Pileup/" + this_syst + "/baseLineCut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
+        FillHist("Pileup/" + this_syst + "/baseLineCut/jet_eta0_" + systName, jet_eta0, weight, 40, -2.4, 2.4);
+        FillHist("Pileup/" + this_syst + "/baseLineCut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
+        FillHist("Pileup/" + this_syst + "/baseLineCut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
+      }
+      else{
+        FillHist("noPileup/" + this_syst + "/baseLineCut/muon_pt0_" + systName, muon_pt0, weight, 80, 0., 400.);
+        FillHist("noPileup/" + this_syst + "/baseLineCut/muon_eta0_" + systName, muon_eta0, weight, 40, -2.4, 2.4);
+        FillHist("noPileup/" + this_syst + "/baseLineCut/njets_" + systName, njets, weight, 10, 0., 10.);
+        FillHist("noPileup/" + this_syst + "/baseLineCut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
+        FillHist("noPileup/" + this_syst + "/baseLineCut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
+        FillHist("noPileup/" + this_syst + "/baseLineCut/jet_eta0_" + systName, jet_eta0, weight, 40, -2.4, 2.4);
+        FillHist("noPileup/" + this_syst + "/baseLineCut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
+        FillHist("noPileup/" + this_syst + "/baseLineCut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
+      }
     }
   }
 
-
-//==== Take leading five jets in pT
+  //==== Take W and top-b candidates from the leading five jets in pT
   std::vector<unsigned int> top_b_jet_candidates;
   std::vector<unsigned int> had_W_candidates;
 
-  // Check up to the leading 5 jets
+  // Check up to the leading 5 jets.
   for(unsigned int ij(0); ij < 5; ij++){
     if(btag_vector.at(ij)){
       // We still need exactly 2 b-jets for the ttbar system
@@ -462,21 +471,21 @@ void Tutorial_reco_tt::executeEventFromParameter() {
       else if(top_b_jet_candidates.size() >= 2) had_W_candidates.push_back(ij);
     }
     else{
-      // Expanded to keep up to 3 hadronic W jet candidates
+      // Keep up to three hadronic W jet candidates.
       if(had_W_candidates.size() < 3) had_W_candidates.push_back(ij);
     }
   }
 
-  // Require at least 3 had_W candidates and 2 top_b candidates
+  // Require at least two W candidates and two top-b candidates.
   if(had_W_candidates.size() < 2 || top_b_jet_candidates.size() < 2) return;
   FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 4.5, 1., 6, 0., 6.);
 
   //==== Combinatorics
-  // Array to hold the 6 combinations: 3C2 (W jets) * 2P2 (b jets) = 6
+  // Up to six combinations: C(nW, 2) W-jet pairs times two b-jet assignments, with nW <= 3.
   Tutorial_reco_tt::ttCombinatoric combinatorics[6];
   int comb_idx = 0;
 
-  // Loop over the 3 ways to choose 2 W jets out of the 3 candidates: (0,1), (0,2), (1,2)
+  // Loop over all ways to choose 2 W jets from the available candidates.
   for(unsigned int w1 = 0; w1 < had_W_candidates.size()-1; w1++){
     for(unsigned int w2 = w1 + 1; w2 < had_W_candidates.size(); w2++){
       // Loop over the 2 ways to assign the b-jets (hadronic vs leptonic)
@@ -498,48 +507,51 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   //==== Find the best combinatoric based on the minimum chi2
   Tutorial_reco_tt::ttCombinatoric* best_combinatoric = &combinatorics[0];
-  for(unsigned int i = 1; i < 6; i++){
+  for(int i = 1; i < comb_idx; i++){
     if(combinatorics[i].best_chi2 < best_combinatoric->best_chi2){
       best_combinatoric = &combinatorics[i];
     }
   }
 
-  FillHist(this_syst + "/noChi2Cut/had_W_mass_" + this_syst, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
-  FillHist(this_syst + "/noChi2Cut/had_top_mass_" + this_syst, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
-  FillHist(this_syst + "/noChi2Cut/lep_W_mass_" + this_syst, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
-  FillHist(this_syst + "/noChi2Cut/lep_top_mass_" + this_syst, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
-  FillHist(this_syst + "/noChi2Cut/chi2_" + this_syst, best_combinatoric->best_chi2, weight, 50, 0., 100000.);
-  FillHist(this_syst + "/noChi2Cut/njets_" + this_syst, njets, weight, 10, 0., 10.);
+  for (const auto &w : weight_map) {
+    TString systName = w.first;
+    float weight = base_weight * w.second;
 
-  if(best_combinatoric->best_chi2 >= 2e3) return;
-  FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 5.5, 1., 6, 0., 6.);
-  
-  FillHist(this_syst + "/Chi2Cut/had_W_mass_" + this_syst, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
-  FillHist(this_syst + "/Chi2Cut/had_top_mass_" + this_syst, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
-  FillHist(this_syst + "/Chi2Cut/lep_W_mass_" + this_syst, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
-  FillHist(this_syst + "/Chi2Cut/lep_top_mass_" + this_syst, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
-  FillHist(this_syst + "/Chi2Cut/chi2_" + this_syst, best_combinatoric->best_chi2, weight, 50, 0., 2000.);
+    FillHist(this_syst + "/noChi2Cut/had_W_mass_" + systName, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
+    FillHist(this_syst + "/noChi2Cut/had_top_mass_" + systName, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
+    FillHist(this_syst + "/noChi2Cut/lep_W_mass_" + systName, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
+    FillHist(this_syst + "/noChi2Cut/lep_top_mass_" + systName, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
+    FillHist(this_syst + "/noChi2Cut/chi2_" + systName, best_combinatoric->best_chi2, weight, 50, 0., 100000.);
+    FillHist(this_syst + "/noChi2Cut/njets_" + systName, njets, weight, 10, 0., 10.);
 
-  FillHist(this_syst + "/Chi2Cut/muon_pt0_" + this_syst, muon_pt0, weight, 80, 0., 400.);
-  FillHist(this_syst + "/Chi2Cut/muon_eta0_" + this_syst, muon_eta0, weight, 40, -2.4, 2.4);
-  FillHist(this_syst + "/Chi2Cut/njets_" + this_syst, njets, weight, 10, 0., 10.);
-  FillHist(this_syst + "/Chi2Cut/njets2_" + this_syst, float(jets2.size()), weight, 10, 0., 10.);
-  FillHist(this_syst + "/Chi2Cut/jet_pt0_" + this_syst, jet_pt0, weight, 80, 0., 400.);
-  FillHist(this_syst + "/Chi2Cut/jet_eta0_" + this_syst, jet_eta0, weight, 40, -5.2, 5.2);
-  FillHist(this_syst + "/Chi2Cut/MET_pt_" + this_syst, MET_pt, weight, 40, 0., 200.);
-  FillHist(this_syst + "/Chi2Cut/MET_phi_" + this_syst, MET_phi, weight, 40, -3.14, 3.14);
+    if(best_combinatoric->best_chi2 < 2e3) {
+      FillHist(this_syst + "/Chi2Cut/had_W_mass_" + systName, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
+      FillHist(this_syst + "/Chi2Cut/had_top_mass_" + systName, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
+      FillHist(this_syst + "/Chi2Cut/lep_W_mass_" + systName, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
+      FillHist(this_syst + "/Chi2Cut/lep_top_mass_" + systName, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
+      FillHist(this_syst + "/Chi2Cut/chi2_" + systName, best_combinatoric->best_chi2, weight, 50, 0., 2000.);
 
-  for (auto& jet : jets) {
-    // Get the b-tagging discriminator score
-    double this_discr = jet.GetTaggerResult(JetTagging::JetFlavTagger::ParT, JetTagging::JetFlavTaggerScoreType::B);
-    
-    // Check if the jet is b-tagged
-    if (this_discr > btag_wp_cut) {
-      FillHist(this_syst + "/Chi2Cut/btagged_RegCorr_jet_pt0_" + this_syst, float(jet.Pt()), weight, 80, 0., 400.);
-      break;
+      FillHist(this_syst + "/Chi2Cut/muon_pt0_" + systName, muon_pt0, weight, 80, 0., 400.);
+      FillHist(this_syst + "/Chi2Cut/muon_eta0_" + systName, muon_eta0, weight, 40, -2.4, 2.4);
+      FillHist(this_syst + "/Chi2Cut/njets_" + systName, njets, weight, 10, 0., 10.);
+      FillHist(this_syst + "/Chi2Cut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
+      FillHist(this_syst + "/Chi2Cut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
+      FillHist(this_syst + "/Chi2Cut/jet_eta0_" + systName, jet_eta0, weight, 40, -5.2, 5.2);
+      FillHist(this_syst + "/Chi2Cut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
+      FillHist(this_syst + "/Chi2Cut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
+
+      if (leading_btagged_jet_pt_before_reg >= 0.f) {
+        FillHist(this_syst + "/Chi2Cut/btagged_jet_pt0_" + systName, leading_btagged_jet_pt_before_reg, weight, 80, 0., 400.);
+      }
+      if (leading_btagged_jet_pt_after_reg >= 0.f) {
+        FillHist(this_syst + "/Chi2Cut/btagged_RegCorr_jet_pt0_" + systName, leading_btagged_jet_pt_after_reg, weight, 80, 0., 400.);
+      }
     }
   }
 
+  if(best_combinatoric->best_chi2 < 2e3) {
+    FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 5.5, 1., 6, 0., 6.);
+  }
 }
 
 void Tutorial_reco_tt::EvalChi2(ttCombinatoric& tt_combinatoric) {
@@ -627,6 +639,17 @@ array<size_t, 4> Tutorial_reco_tt::GetTopAndAntiTopIndices(const GenViewCollecti
   constexpr unsigned long FIRST_COPY_BIT = 1UL << 12;
   constexpr unsigned long LAST_COPY_BIT = 1UL << 13;
 
+  auto warn_duplicate = [](const char *message, size_t current_idx,
+                           size_t duplicate_idx) {
+    cerr << "[Tutorial_reco_tt::GetTopAndAntiTopIndices] " << message
+         << ": keeping index " << current_idx << ", ignoring index "
+         << duplicate_idx << endl;
+  };
+
+  auto warn_missing = [](const char *message) {
+    cerr << "[Tutorial_reco_tt::GetTopAndAntiTopIndices] " << message << endl;
+  };
+
   for (size_t idx = 0; idx < n; ++idx) {
     const GenView &gen = gens[idx];
 
@@ -638,34 +661,67 @@ array<size_t, 4> Tutorial_reco_tt::GetTopAndAntiTopIndices(const GenViewCollecti
 
     if (pdg == 6) { // top
       if (isFirstCopy) {
-        assert(FirstCopyTopIndex == npos &&
-               "Multiple first-copy tops found in event");
-        FirstCopyTopIndex = idx;
+        if (FirstCopyTopIndex == npos) {
+          FirstCopyTopIndex = idx;
+        } else {
+          warn_duplicate("Multiple first-copy tops found in event",
+                         FirstCopyTopIndex, idx);
+          assert(FirstCopyTopIndex == npos &&
+                 "Multiple first-copy tops found in event");
+        }
       }
       if (isLastCopy) {
-        assert(LastCopyTopIndex == npos &&
-               "Multiple last-copy tops found in event");
-        LastCopyTopIndex = idx;
+        if (LastCopyTopIndex == npos) {
+          LastCopyTopIndex = idx;
+        } else {
+          warn_duplicate("Multiple last-copy tops found in event",
+                         LastCopyTopIndex, idx);
+          assert(LastCopyTopIndex == npos &&
+                 "Multiple last-copy tops found in event");
+        }
       }
     } else if (pdg == -6) { // anti-top
       if (isFirstCopy) {
-        assert(FirstCopyAntiTopIndex == npos &&
-               "Multiple first-copy antitops found in event");
-        FirstCopyAntiTopIndex = idx;
+        if (FirstCopyAntiTopIndex == npos) {
+          FirstCopyAntiTopIndex = idx;
+        } else {
+          warn_duplicate("Multiple first-copy antitops found in event",
+                         FirstCopyAntiTopIndex, idx);
+          assert(FirstCopyAntiTopIndex == npos &&
+                 "Multiple first-copy antitops found in event");
+        }
       }
       if (isLastCopy) {
-        assert(LastCopyAntiTopIndex == npos &&
-               "Multiple last-copy antitops found in event");
-        LastCopyAntiTopIndex = idx;
+        if (LastCopyAntiTopIndex == npos) {
+          LastCopyAntiTopIndex = idx;
+        } else {
+          warn_duplicate("Multiple last-copy antitops found in event",
+                         LastCopyAntiTopIndex, idx);
+          assert(LastCopyAntiTopIndex == npos &&
+                 "Multiple last-copy antitops found in event");
+        }
       }
     }
   }
 
-  assert(FirstCopyTopIndex != npos && "No first-copy top found in event");
-  assert(FirstCopyAntiTopIndex != npos &&
-         "No first-copy antitop found in event");
-  assert(LastCopyTopIndex != npos && "No last-copy top found in event");
-  assert(LastCopyAntiTopIndex != npos && "No last-copy antitop found in event");
+  if (FirstCopyTopIndex == npos) {
+    warn_missing("No first-copy top found in event");
+    assert(FirstCopyTopIndex != npos && "No first-copy top found in event");
+  }
+  if (FirstCopyAntiTopIndex == npos) {
+    warn_missing("No first-copy antitop found in event");
+    assert(FirstCopyAntiTopIndex != npos &&
+           "No first-copy antitop found in event");
+  }
+  if (LastCopyTopIndex == npos) {
+    warn_missing("No last-copy top found in event");
+    assert(LastCopyTopIndex != npos && "No last-copy top found in event");
+  }
+  if (LastCopyAntiTopIndex == npos) {
+    warn_missing("No last-copy antitop found in event");
+    assert(LastCopyAntiTopIndex != npos &&
+           "No last-copy antitop found in event");
+  }
 
   return {FirstCopyTopIndex, FirstCopyAntiTopIndex, LastCopyTopIndex,
           LastCopyAntiTopIndex};
