@@ -98,19 +98,6 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   const TString this_syst = systHelper->getCurrentSysName();
   if (IsDATA && this_syst != "Central") return;
 
-  if(eval_top_pt_reweight_normalization && MCSample.Contains("TT") && this_syst == "Central") {
-    const auto top_indices = GetTopAndAntiTopIndices(AllGenViews);
-    constexpr std::size_t npos = std::numeric_limits<std::size_t>::max();
-    if (top_indices[0] != npos && top_indices[1] != npos) {
-      const TLorentzVector top = AllGenViews[top_indices[0]].P4();
-      const TLorentzVector antiTop = AllGenViews[top_indices[1]].P4();
-      float w_toppt = myCorr->GetTopPtReweight(top, antiTop);
-      FillHist(this_syst + "/count/w_toppt" + this_syst, 0.5, 1., 2, 0., 2.);
-      FillHist(this_syst + "/count/w_toppt" + this_syst, 1.5, w_toppt, 2, 0., 2.);
-    }
-  }
-
-
   Muon::MuonID this_muon_id = MuonIDs[0];
   TString this_muon_id_sf_key = MuonIDISOSFKeys[0];
   TString this_muon_iso_sf_key = MuonIDISOSFKeys[1];
@@ -134,9 +121,6 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     this_muon_id_sf_key = MuonIDISOSFKeys[2];
     this_muon_iso_sf_key = MuonIDISOSFKeys[3];
   }
-
-  FillHist(this_syst + "/cutflow/cutflow_" + this_syst, 0.5, 1., 6, 0., 6.);
-
 
   //==== MET Filter & Trigger
   if (!PassMetFilter(AllJetViews, ev)) return;
@@ -198,7 +182,40 @@ void Tutorial_reco_tt::executeEventFromParameter() {
     return;
   }
 
-  TString channel_dir = this_syst + "/" + channel_name;
+  TString sample_name = IsDATA ? "Data" : MCSample;
+  if (!IsDATA && (MCSample == "TTLJ_powheg" || MCSample == "TTLL_powheg")) {
+    int ttbar_flavor_id = genTtbarId % 100;
+    if (ttbar_flavor_id < 0) ttbar_flavor_id += 100;
+
+    if (ttbar_flavor_id >= 53 && ttbar_flavor_id <= 55) {
+      sample_name = MCSample + "_bb";
+    } else if (ttbar_flavor_id >= 51 && ttbar_flavor_id <= 52) {
+      sample_name = MCSample + "_bj";
+    } else if (ttbar_flavor_id >= 43 && ttbar_flavor_id <= 45) {
+      sample_name = MCSample + "_cc";
+    } else if (ttbar_flavor_id >= 41 && ttbar_flavor_id <= 42) {
+      sample_name = MCSample + "_cj";
+    } else {
+      sample_name = MCSample + "_jj";
+    }
+  }
+  const TString hist_sample_prefix = "histo_" + sample_name;
+  TString event_hist_name = hist_sample_prefix;
+  if (this_syst != "Central") event_hist_name += "_" + this_syst;
+
+  if(eval_top_pt_reweight_normalization && MCSample.Contains("TT") && this_syst == "Central") {
+    const auto top_indices = GetTopAndAntiTopIndices(AllGenViews);
+    constexpr std::size_t npos = std::numeric_limits<std::size_t>::max();
+    if (top_indices[0] != npos && top_indices[1] != npos) {
+      const TLorentzVector top = AllGenViews[top_indices[0]].P4();
+      const TLorentzVector antiTop = AllGenViews[top_indices[1]].P4();
+      float w_toppt = myCorr->GetTopPtReweight(top, antiTop);
+      FillHist(channel_name + "/count_w_toppt/" + event_hist_name, 0.5, 1., 2, 0., 2.);
+      FillHist(channel_name + "/count_w_toppt/" + event_hist_name, 1.5, w_toppt, 2, 0., 2.);
+    }
+  }
+
+  FillHist(channel_name + "/cutflow/" + event_hist_name, 0.5, 1., 6, 0., 6.);
 
   //==== Jet Selection
   MyCorrection::variation jes_variation = MyCorrection::variation::nom;
@@ -227,10 +244,10 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   //==== Event selections
   if (jets.size() < 6) return;
   //if (METv.Pt() <= 20) return;
-  FillHist(channel_dir + "/cutflow/cutflow_" + this_syst, 1.5, 1., 6, 0., 6.);
+  FillHist(channel_name + "/cutflow/" + event_hist_name, 1.5, 1., 6, 0., 6.);
 
   if (!PassJetVetoMap(AllJetViews, AllMuonViews, "jetvetomap_fpix")) return;
-  FillHist(channel_dir + "/cutflow/cutflow_" + this_syst, 2.5, 1., 6, 0., 6.);
+  FillHist(channel_name + "/cutflow/" + event_hist_name, 2.5, 1., 6, 0., 6.);
   //==== B-Tagging (DeepJet Medium WP example)
   int NBJets = 0;
   int njets_pt30_non_btagged = 0;
@@ -262,9 +279,9 @@ void Tutorial_reco_tt::executeEventFromParameter() {
         double UParTAK4RegPtRawCorr = jet.UParTAK4RegPtRawCorr();
         double UParTAK4RegPtRawCorrNeutrino = jet.UParTAK4RegPtRawCorrNeutrino();
         double UParT_ratio = UParTAK4RegPtRawCorrNeutrino / UParTAK4RegPtRawCorr;
-        FillHist(this_syst + "/corrections/UParTAK4RegPtRawCorr_" + this_syst, UParTAK4RegPtRawCorr, 1., 80, 0., 2);
-        FillHist(this_syst + "/corrections/UParTAK4RegPtRawCorrNeutrino_" + this_syst, UParTAK4RegPtRawCorrNeutrino, 1., 80, 0., 2);
-        FillHist(this_syst + "/corrections/UParT_ratio_" + this_syst, UParT_ratio, 1., 80, 0., 2);
+        FillHist(channel_name + "/corrections_UParTAK4RegPtRawCorr/" + event_hist_name, UParTAK4RegPtRawCorr, 1., 80, 0., 2);
+        FillHist(channel_name + "/corrections_UParTAK4RegPtRawCorrNeutrino/" + event_hist_name, UParTAK4RegPtRawCorrNeutrino, 1., 80, 0., 2);
+        FillHist(channel_name + "/corrections_UParT_ratio/" + event_hist_name, UParT_ratio, 1., 80, 0., 2);
         // Calculate your modified pT
         double modified_pt = current_pt;
         double modified_m  = current_m;
@@ -343,7 +360,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   if (NBJets != 3) return;
   if (njets_pt30_non_btagged < 6) return;
-  FillHist(channel_dir + "/cutflow/cutflow_" + this_syst, 3.5, 1., 6, 0., 6.);
+  FillHist(channel_name + "/cutflow/" + event_hist_name, 3.5, 1., 6, 0., 6.);
 
   //==== Event Weight and Systematic Weight Map
   float base_weight = 1.;
@@ -477,6 +494,51 @@ void Tutorial_reco_tt::executeEventFromParameter() {
         const float weight = LHEPdfWeight[index];
         return std::isfinite(weight) ? weight : 1.f;
       };
+      auto safe_lhe_scale_weight =
+          [&](MyCorrection::variation muF_syst,
+              MyCorrection::variation muR_syst) {
+            if (!LHEScaleWeight.valid() || nLHEScaleWeight < 8) return 1.f;
+
+            // NanoAODv15 stores the nominal scale point at index 4. Older
+            // NanoAOD versions used by AnalyzerCore omit that nominal entry.
+            if (nLHEScaleWeight >= 9) {
+              int index = -1;
+              if (muF_syst == MyCorrection::variation::down &&
+                  muR_syst == MyCorrection::variation::down) {
+                index = 0;
+              } else if (muF_syst == MyCorrection::variation::nom &&
+                         muR_syst == MyCorrection::variation::down) {
+                index = 1;
+              } else if (muF_syst == MyCorrection::variation::up &&
+                         muR_syst == MyCorrection::variation::down) {
+                index = 2;
+              } else if (muF_syst == MyCorrection::variation::down &&
+                         muR_syst == MyCorrection::variation::nom) {
+                index = 3;
+              } else if (muF_syst == MyCorrection::variation::nom &&
+                         muR_syst == MyCorrection::variation::nom) {
+                return 1.f;
+              } else if (muF_syst == MyCorrection::variation::up &&
+                         muR_syst == MyCorrection::variation::nom) {
+                index = 5;
+              } else if (muF_syst == MyCorrection::variation::down &&
+                         muR_syst == MyCorrection::variation::up) {
+                index = 6;
+              } else if (muF_syst == MyCorrection::variation::nom &&
+                         muR_syst == MyCorrection::variation::up) {
+                index = 7;
+              } else if (muF_syst == MyCorrection::variation::up &&
+                         muR_syst == MyCorrection::variation::up) {
+                index = 8;
+              }
+              if (index < 0 || nLHEScaleWeight <= index) return 1.f;
+              const float weight = LHEScaleWeight[index];
+              return std::isfinite(weight) ? weight : 1.f;
+            }
+
+            const float weight = GetScaleVariation(muF_syst, muR_syst);
+            return std::isfinite(weight) ? weight : 1.f;
+          };
 
       const float nominal_systematic_weight =
           weight_map.count("Central") ? weight_map["Central"] : 1.f;
@@ -490,6 +552,33 @@ void Tutorial_reco_tt::executeEventFromParameter() {
           nominal_systematic_weight * safe_lhe_pdf_weight(101);
       weight_map["AlphaS_Up"] =
           nominal_systematic_weight * safe_lhe_pdf_weight(102);
+
+      if (LHEScaleWeight.valid() && nLHEScaleWeight >= 8) {
+        weight_map["LHEScale_MuF_Up"] =
+            nominal_systematic_weight *
+            safe_lhe_scale_weight(MyCorrection::variation::up,
+                                  MyCorrection::variation::nom);
+        weight_map["LHEScale_MuF_Down"] =
+            nominal_systematic_weight *
+            safe_lhe_scale_weight(MyCorrection::variation::down,
+                                  MyCorrection::variation::nom);
+        weight_map["LHEScale_MuR_Up"] =
+            nominal_systematic_weight *
+            safe_lhe_scale_weight(MyCorrection::variation::nom,
+                                  MyCorrection::variation::up);
+        weight_map["LHEScale_MuR_Down"] =
+            nominal_systematic_weight *
+            safe_lhe_scale_weight(MyCorrection::variation::nom,
+                                  MyCorrection::variation::down);
+        weight_map["LHEScale_MuFMuR_Up"] =
+            nominal_systematic_weight *
+            safe_lhe_scale_weight(MyCorrection::variation::up,
+                                  MyCorrection::variation::up);
+        weight_map["LHEScale_MuFMuR_Down"] =
+            nominal_systematic_weight *
+            safe_lhe_scale_weight(MyCorrection::variation::down,
+                                  MyCorrection::variation::down);
+      }
 
       if (PSWeight.valid() && nPSWeight >= 4) {
         weight_map["FSR_Up"] =
@@ -557,43 +646,45 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   for (const auto &w : weight_map) {
     TString systName = w.first;
     float weight = base_weight * w.second;
+    TString hist_name = hist_sample_prefix;
+    if (systName != "Central") hist_name += "_" + systName;
 
     if (leading_btagged_jet_pt_before_reg >= 0.f) {
-      FillHist(channel_dir + "/baseLineCut/btagged_jet_pt0_" + systName, leading_btagged_jet_pt_before_reg, weight, 80, 0., 400.);
+      FillHist(channel_name + "/baseLineCut_btagged_jet_pt0/" + hist_name, leading_btagged_jet_pt_before_reg, weight, 80, 0., 400.);
     }
     if (leading_btagged_jet_pt_after_reg >= 0.f) {
-      FillHist(channel_dir + "/baseLineCut/btagged_RegCorr_jet_pt0_" + systName, leading_btagged_jet_pt_after_reg, weight, 80, 0., 400.);
+      FillHist(channel_name + "/baseLineCut_btagged_RegCorr_jet_pt0/" + hist_name, leading_btagged_jet_pt_after_reg, weight, 80, 0., 400.);
     }
 
-    FillHist(channel_dir + "/baseLineCut/" + lepton_hist_name + "_pt0_" + systName, lepton_pt0, weight, 80, 0., 400.);
-    FillHist(channel_dir + "/baseLineCut/" + lepton_hist_name + "_eta0_" + systName, lepton_eta0, weight, 40, lepton_eta_min, lepton_eta_max);
-    FillHist(channel_dir + "/baseLineCut/njets_" + systName, njets, weight, 10, 0., 10.);
-    FillHist(channel_dir + "/baseLineCut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
-    FillHist(channel_dir + "/baseLineCut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
-    FillHist(channel_dir + "/baseLineCut/jet_eta0_" + systName, jet_eta0, weight, 40, -5.2, 5.2);
-    FillHist(channel_dir + "/baseLineCut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
-    FillHist(channel_dir + "/baseLineCut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
+    FillHist(channel_name + "/baseLineCut_" + lepton_hist_name + "_pt0/" + hist_name, lepton_pt0, weight, 80, 0., 400.);
+    FillHist(channel_name + "/baseLineCut_" + lepton_hist_name + "_eta0/" + hist_name, lepton_eta0, weight, 40, lepton_eta_min, lepton_eta_max);
+    FillHist(channel_name + "/baseLineCut_njets/" + hist_name, njets, weight, 10, 0., 10.);
+    FillHist(channel_name + "/baseLineCut_njets2/" + hist_name, float(jets2.size()), weight, 10, 0., 10.);
+    FillHist(channel_name + "/baseLineCut_jet_pt0/" + hist_name, jet_pt0, weight, 80, 0., 400.);
+    FillHist(channel_name + "/baseLineCut_jet_eta0/" + hist_name, jet_eta0, weight, 40, -5.2, 5.2);
+    FillHist(channel_name + "/baseLineCut_MET_pt/" + hist_name, MET_pt, weight, 40, 0., 200.);
+    FillHist(channel_name + "/baseLineCut_MET_phi/" + hist_name, MET_phi, weight, 40, -3.14, 3.14);
 
     if (!IsDATA && draw_include_pu_jets) {
       if(isPileupJet){
-        FillHist("Pileup/" + channel_dir + "/baseLineCut/" + lepton_hist_name + "_pt0_" + systName, lepton_pt0, weight, 80, 0., 400.);
-        FillHist("Pileup/" + channel_dir + "/baseLineCut/" + lepton_hist_name + "_eta0_" + systName, lepton_eta0, weight, 40, lepton_eta_min, lepton_eta_max);
-        FillHist("Pileup/" + channel_dir + "/baseLineCut/njets_" + systName, njets, weight, 10, 0., 10.);
-        FillHist("Pileup/" + channel_dir + "/baseLineCut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
-        FillHist("Pileup/" + channel_dir + "/baseLineCut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
-        FillHist("Pileup/" + channel_dir + "/baseLineCut/jet_eta0_" + systName, jet_eta0, weight, 40, -2.4, 2.4);
-        FillHist("Pileup/" + channel_dir + "/baseLineCut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
-        FillHist("Pileup/" + channel_dir + "/baseLineCut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
+        FillHist(channel_name + "/Pileup_baseLineCut_" + lepton_hist_name + "_pt0/" + hist_name, lepton_pt0, weight, 80, 0., 400.);
+        FillHist(channel_name + "/Pileup_baseLineCut_" + lepton_hist_name + "_eta0/" + hist_name, lepton_eta0, weight, 40, lepton_eta_min, lepton_eta_max);
+        FillHist(channel_name + "/Pileup_baseLineCut_njets/" + hist_name, njets, weight, 10, 0., 10.);
+        FillHist(channel_name + "/Pileup_baseLineCut_njets2/" + hist_name, float(jets2.size()), weight, 10, 0., 10.);
+        FillHist(channel_name + "/Pileup_baseLineCut_jet_pt0/" + hist_name, jet_pt0, weight, 80, 0., 400.);
+        FillHist(channel_name + "/Pileup_baseLineCut_jet_eta0/" + hist_name, jet_eta0, weight, 40, -2.4, 2.4);
+        FillHist(channel_name + "/Pileup_baseLineCut_MET_pt/" + hist_name, MET_pt, weight, 40, 0., 200.);
+        FillHist(channel_name + "/Pileup_baseLineCut_MET_phi/" + hist_name, MET_phi, weight, 40, -3.14, 3.14);
       }
       else{
-        FillHist("noPileup/" + channel_dir + "/baseLineCut/" + lepton_hist_name + "_pt0_" + systName, lepton_pt0, weight, 80, 0., 400.);
-        FillHist("noPileup/" + channel_dir + "/baseLineCut/" + lepton_hist_name + "_eta0_" + systName, lepton_eta0, weight, 40, lepton_eta_min, lepton_eta_max);
-        FillHist("noPileup/" + channel_dir + "/baseLineCut/njets_" + systName, njets, weight, 10, 0., 10.);
-        FillHist("noPileup/" + channel_dir + "/baseLineCut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
-        FillHist("noPileup/" + channel_dir + "/baseLineCut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
-        FillHist("noPileup/" + channel_dir + "/baseLineCut/jet_eta0_" + systName, jet_eta0, weight, 40, -2.4, 2.4);
-        FillHist("noPileup/" + channel_dir + "/baseLineCut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
-        FillHist("noPileup/" + channel_dir + "/baseLineCut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
+        FillHist(channel_name + "/noPileup_baseLineCut_" + lepton_hist_name + "_pt0/" + hist_name, lepton_pt0, weight, 80, 0., 400.);
+        FillHist(channel_name + "/noPileup_baseLineCut_" + lepton_hist_name + "_eta0/" + hist_name, lepton_eta0, weight, 40, lepton_eta_min, lepton_eta_max);
+        FillHist(channel_name + "/noPileup_baseLineCut_njets/" + hist_name, njets, weight, 10, 0., 10.);
+        FillHist(channel_name + "/noPileup_baseLineCut_njets2/" + hist_name, float(jets2.size()), weight, 10, 0., 10.);
+        FillHist(channel_name + "/noPileup_baseLineCut_jet_pt0/" + hist_name, jet_pt0, weight, 80, 0., 400.);
+        FillHist(channel_name + "/noPileup_baseLineCut_jet_eta0/" + hist_name, jet_eta0, weight, 40, -2.4, 2.4);
+        FillHist(channel_name + "/noPileup_baseLineCut_MET_pt/" + hist_name, MET_pt, weight, 40, 0., 200.);
+        FillHist(channel_name + "/noPileup_baseLineCut_MET_phi/" + hist_name, MET_phi, weight, 40, -3.14, 3.14);
       }
     }
   }
@@ -618,7 +709,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   // Require at least two W candidates and two top-b candidates.
   if(had_W_candidates.size() < 2 || top_b_jet_candidates.size() < 2) return;
-  FillHist(channel_dir + "/cutflow/cutflow_" + this_syst, 4.5, 1., 6, 0., 6.);
+  FillHist(channel_name + "/cutflow/" + event_hist_name, 4.5, 1., 6, 0., 6.);
 
   //==== Combinatorics
   // Up to six combinations: C(nW, 2) W-jet pairs times two b-jet assignments, with nW <= 3.
@@ -656,41 +747,43 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   for (const auto &w : weight_map) {
     TString systName = w.first;
     float weight = base_weight * w.second;
+    TString hist_name = hist_sample_prefix;
+    if (systName != "Central") hist_name += "_" + systName;
 
-    FillHist(channel_dir + "/noChi2Cut/had_W_mass_" + systName, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
-    FillHist(channel_dir + "/noChi2Cut/had_top_mass_" + systName, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
-    FillHist(channel_dir + "/noChi2Cut/lep_W_mass_" + systName, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
-    FillHist(channel_dir + "/noChi2Cut/lep_top_mass_" + systName, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
-    FillHist(channel_dir + "/noChi2Cut/chi2_" + systName, best_combinatoric->best_chi2, weight, 50, 0., 100000.);
-    FillHist(channel_dir + "/noChi2Cut/njets_" + systName, njets, weight, 10, 0., 10.);
+    FillHist(channel_name + "/noChi2Cut_had_W_mass/" + hist_name, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
+    FillHist(channel_name + "/noChi2Cut_had_top_mass/" + hist_name, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
+    FillHist(channel_name + "/noChi2Cut_lep_W_mass/" + hist_name, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
+    FillHist(channel_name + "/noChi2Cut_lep_top_mass/" + hist_name, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
+    FillHist(channel_name + "/noChi2Cut_chi2/" + hist_name, best_combinatoric->best_chi2, weight, 50, 0., 100000.);
+    FillHist(channel_name + "/noChi2Cut_njets/" + hist_name, njets, weight, 10, 0., 10.);
 
     if(best_combinatoric->best_chi2 < 2e3) {
-      FillHist(channel_dir + "/Chi2Cut/had_W_mass_" + systName, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
-      FillHist(channel_dir + "/Chi2Cut/had_top_mass_" + systName, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
-      FillHist(channel_dir + "/Chi2Cut/lep_W_mass_" + systName, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
-      FillHist(channel_dir + "/Chi2Cut/lep_top_mass_" + systName, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
-      FillHist(channel_dir + "/Chi2Cut/chi2_" + systName, best_combinatoric->best_chi2, weight, 50, 0., 2000.);
+      FillHist(channel_name + "/Chi2Cut_had_W_mass/" + hist_name, best_combinatoric->had_W_mass, weight, 40, 0., 200.);
+      FillHist(channel_name + "/Chi2Cut_had_top_mass/" + hist_name, best_combinatoric->had_top_mass, weight, 80, 0., 400.);
+      FillHist(channel_name + "/Chi2Cut_lep_W_mass/" + hist_name, best_combinatoric->best_lep_W_mass, weight, 40, 0., 200.);
+      FillHist(channel_name + "/Chi2Cut_lep_top_mass/" + hist_name, best_combinatoric->best_lep_top_mass, weight, 80, 0., 400.);
+      FillHist(channel_name + "/Chi2Cut_chi2/" + hist_name, best_combinatoric->best_chi2, weight, 50, 0., 2000.);
 
-      FillHist(channel_dir + "/Chi2Cut/" + lepton_hist_name + "_pt0_" + systName, lepton_pt0, weight, 80, 0., 400.);
-      FillHist(channel_dir + "/Chi2Cut/" + lepton_hist_name + "_eta0_" + systName, lepton_eta0, weight, 40, lepton_eta_min, lepton_eta_max);
-      FillHist(channel_dir + "/Chi2Cut/njets_" + systName, njets, weight, 10, 0., 10.);
-      FillHist(channel_dir + "/Chi2Cut/njets2_" + systName, float(jets2.size()), weight, 10, 0., 10.);
-      FillHist(channel_dir + "/Chi2Cut/jet_pt0_" + systName, jet_pt0, weight, 80, 0., 400.);
-      FillHist(channel_dir + "/Chi2Cut/jet_eta0_" + systName, jet_eta0, weight, 40, -5.2, 5.2);
-      FillHist(channel_dir + "/Chi2Cut/MET_pt_" + systName, MET_pt, weight, 40, 0., 200.);
-      FillHist(channel_dir + "/Chi2Cut/MET_phi_" + systName, MET_phi, weight, 40, -3.14, 3.14);
+      FillHist(channel_name + "/Chi2Cut_" + lepton_hist_name + "_pt0/" + hist_name, lepton_pt0, weight, 80, 0., 400.);
+      FillHist(channel_name + "/Chi2Cut_" + lepton_hist_name + "_eta0/" + hist_name, lepton_eta0, weight, 40, lepton_eta_min, lepton_eta_max);
+      FillHist(channel_name + "/Chi2Cut_njets/" + hist_name, njets, weight, 10, 0., 10.);
+      FillHist(channel_name + "/Chi2Cut_njets2/" + hist_name, float(jets2.size()), weight, 10, 0., 10.);
+      FillHist(channel_name + "/Chi2Cut_jet_pt0/" + hist_name, jet_pt0, weight, 80, 0., 400.);
+      FillHist(channel_name + "/Chi2Cut_jet_eta0/" + hist_name, jet_eta0, weight, 40, -5.2, 5.2);
+      FillHist(channel_name + "/Chi2Cut_MET_pt/" + hist_name, MET_pt, weight, 40, 0., 200.);
+      FillHist(channel_name + "/Chi2Cut_MET_phi/" + hist_name, MET_phi, weight, 40, -3.14, 3.14);
 
       if (leading_btagged_jet_pt_before_reg >= 0.f) {
-        FillHist(channel_dir + "/Chi2Cut/btagged_jet_pt0_" + systName, leading_btagged_jet_pt_before_reg, weight, 80, 0., 400.);
+        FillHist(channel_name + "/Chi2Cut_btagged_jet_pt0/" + hist_name, leading_btagged_jet_pt_before_reg, weight, 80, 0., 400.);
       }
       if (leading_btagged_jet_pt_after_reg >= 0.f) {
-        FillHist(channel_dir + "/Chi2Cut/btagged_RegCorr_jet_pt0_" + systName, leading_btagged_jet_pt_after_reg, weight, 80, 0., 400.);
+        FillHist(channel_name + "/Chi2Cut_btagged_RegCorr_jet_pt0/" + hist_name, leading_btagged_jet_pt_after_reg, weight, 80, 0., 400.);
       }
     }
   }
 
   if(best_combinatoric->best_chi2 < 2e3) {
-    FillHist(channel_dir + "/cutflow/cutflow_" + this_syst, 5.5, 1., 6, 0., 6.);
+    FillHist(channel_name + "/cutflow/" + event_hist_name, 5.5, 1., 6, 0., 6.);
   }
 }
 
