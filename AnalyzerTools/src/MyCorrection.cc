@@ -123,16 +123,16 @@ MyCorrection::MyCorrection(const TString &era, const TString &period,
   // Please use ####### as placeholder
   if (!IsData) {
     JME_JER_GT["2024"] =
-        "Summer24Prompt24_JRV1_MC_######_AK4PFPuppi";
+        "Summer24Prompt24_JRV2_MC_######_AK4PFPuppi";
                                                                // because real
                                                                // content of
                                                                // file is this
-    JME_JES_GT["2024"] = "Summer24Prompt24_V3_MC_######_AK4PFPuppi";
+    JME_JES_GT["2024"] = "Summer24Prompt24_V5_MC_######_AK4PFPuppi";
   } else {
     // JME_JER_GT["2024"] =
     // "Summer23BPixPrompt23_RunD_JRV1_DATA_######_AK4PFPuppi"; // this is
     // because real content of file is this
-    JME_JES_GT["2024"] = "Summer24Prompt24_V3_DATA_######_AK4PFPuppi";
+    JME_JES_GT["2024"] = "Summer24Prompt24_V5_DATA_######_AK4PFPuppi";
   }
 
   JME_vetomap_keys["2024"] = "Summer24Prompt24_RunBCDEFGHI_V1";
@@ -224,7 +224,7 @@ MyCorrection::GetEraConfig(TString era, const string &btagging_eff_file,
     // config.json_btagging_R += "/2023BPix/BTV/" + btagging_R_file;
     // config.json_ctagging_R += "/2023BPix/BTV/" + ctagging_R_file;
     config.json_electron += tag + "electron.json.gz";
-    config.json_electron_variation =
+    config.json_electron_variation +=
         tag + "electronSS_EtDependent.json.gz";
     config.json_electron_hlt += tag + "electronHlt.json.gz";
     // config.json_photon += "/2023_Summer23BPix/photon.json.gz";
@@ -377,12 +377,72 @@ float MyCorrection::GetMuonIDSF(const TString &Muon_ID_SF_Key,
 // For Run2, scale uncertainty is not stored in the NanoAODv9.
 // Should patch from https://github.com/cms-egamma/ScaleFactorsJSON
 // https://twiki.cern.ch/twiki/bin/view/CMS/EgammSFandSSRun3
+float MyCorrection::GetElectronScale(const float scEta, const float r9,
+                                      const float pt,
+                                      const unsigned char seedGain,
+                                      const unsigned int runNumber) const {
+  if (!IsDATA)
+    return 1.0;
+  if (Run == 2)
+    return 1.0;
+  if (pt < 15.f)
+    return 1.0;
+
+  float scEta_val = scEta;
+  auto cset = cset_electron_variation->compound().at("Scale");
+  vector<correction::Variable::Type> args = {
+      "scale",
+      static_cast<double>(runNumber),
+      static_cast<double>(scEta_val),
+      static_cast<double>(r9),
+      static_cast<double>(pt),
+      static_cast<double>(seedGain)
+  };
+  return safeEvaluate(cset, "GetElectronScale", args);
+}
+
+float MyCorrection::GetElectronSmearWidth(const Electron &electron,
+                                         const variation syst) const {
+  if (Run == 2)
+    return 0.0;
+  
+  float pt = electron.Pt();
+  if (electron.dEsigmaUp() > 0.0) {
+    pt = electron.dEsigmaUp();
+  }
+  if (pt < 15.f)
+    return 0.0;
+
+  float scEta = electron.scEta();
+  if (scEta < -990.f) {
+    scEta = electron.Eta() + electron.deltaEtaInSC();
+  }
+
+  auto cset = cset_electron_variation->at("SmearAndSyst");
+  string syst_str = "smear";
+  if (syst == variation::up) {
+    syst_str = "smear_up";
+  } else if (syst == variation::down) {
+    syst_str = "smear_down";
+  }
+
+  vector<correction::Variable::Type> args = {
+      syst_str,
+      static_cast<double>(pt),
+      static_cast<double>(electron.r9()),
+      static_cast<double>(scEta)
+  };
+  return safeEvaluate(cset, "GetElectronSmearWidth", args);
+}
+
 float MyCorrection::GetElectronScaleUnc(const float scEta,
                                         const unsigned char seedGain,
                                         const unsigned int runNumber,
                                         const float r9, const float pt,
                                         const variation syst) const {
   if (IsDATA)
+    return 1.0;
+  if (pt < 15.f)
     return 1.0;
 
   switch (Run) {
@@ -398,31 +458,32 @@ float MyCorrection::GetElectronScaleUnc(const float scEta,
   case 3: {
     if (syst == variation::nom)
       return 1.;
-    const string key = (GetEra().Contains("2022"))
-                           ? "Scale"
-                           : EGM_keys.at(GetEra().Data()) + "_ScaleJSON";
-    auto cset = cset_electron_variation->at(key);
-    vector<correction::Variable::Type> args = {"total_uncertainty",
-                                               static_cast<int>(seedGain),
-                                               static_cast<float>(runNumber),
-                                               scEta,
-                                               r9,
-                                               pt};
-    const float unc = safeEvaluate(cset, "GetElectronScaleSF", args);
-    if (syst == variation::up)
-      return 1. + unc;
-    else if (syst == variation::down)
-      return 1. - unc;
-    else
+    
+    float scEta_val = scEta;
+    auto cset = cset_electron_variation->at("SmearAndSyst");
+    string syst_str = "";
+    if (syst == variation::up) {
+      syst_str = "scale_up";
+    } else if (syst == variation::down) {
+      syst_str = "scale_down";
+    } else {
       throw runtime_error(
           "[MyCorrection::GetElectronScaleUnc] Invalid syst value");
+    }
+
+    vector<correction::Variable::Type> args = {
+        syst_str,
+        static_cast<double>(pt),
+        static_cast<double>(r9),
+        static_cast<double>(scEta_val)
+    };
+    return safeEvaluate(cset, "GetElectronScaleSF", args);
   }
   default:
     throw runtime_error(
         "[MyCorrection::GetElectronScaleUnc] Invalid run number");
   }
 
-  // This should never be reached, but added to avoid compiler warning
   return 1.0;
 }
 
@@ -430,39 +491,24 @@ float MyCorrection::GetElectronSmearUnc(const Electron &electron,
                                         const variation syst,
                                         const unsigned int seed) const {
   if (IsDATA)
-    return 1.0; // No smearing for data, only applied to MC
+    return 1.0;
   if (Run == 2)
     throw runtime_error("[MyCorrection::GetElectronSmearUnc] Run2 is not "
                         "supported by NanoAODv9");
-
-  const string key = (GetEra().Contains("2022"))
-                         ? "Smearing"
-                         : EGM_keys.at(GetEra().Data()) + "_SmearingJSON";
-  auto cset = cset_electron_variation->at(key);
-  vector<correction::Variable::Type> args = {"rho", electron.scEta(),
-                                             electron.r9()};
-  const float rho = safeEvaluate(cset, "GetElectronScaleSF", args);
-
-  TRandom3 rng(seed);
-
-  // Handle different variation cases
-  if (syst == variation::nom) {
-    // For nominal case, apply normal smearing
-    return rng.Gaus(1.0, rho);
-  } else if (syst == variation::up) {
-    // For up variation, increase the width of the Gaussian
-    return rng.Gaus(
-        1.0, rho + safeEvaluate(cset, "GetElectronScaleSF",
-                                {"err_rho", electron.scEta(), electron.r9()}));
-  } else if (syst == variation::down) {
-    // For down variation, decrease the width of the Gaussian
-    return rng.Gaus(
-        1.0, rho - safeEvaluate(cset, "GetElectronScaleSF",
-                                {"err_rho", electron.scEta(), electron.r9()}));
-  } else {
-    throw runtime_error(
-        "[MyCorrection::GetElectronSmearUnc] Invalid syst value");
+  
+  float pt = electron.Pt();
+  if (electron.dEsigmaUp() > 0.0) {
+    pt = electron.dEsigmaUp();
   }
+  if (pt < 15.f)
+    return 1.0;
+
+  unsigned int final_seed = seed + static_cast<unsigned int>(std::abs(sin(electron.Phi()) * 100000));
+  TRandom3 rng(final_seed);
+  float gaus = rng.Gaus(0.0, 1.0);
+
+  float smear = GetElectronSmearWidth(electron, syst);
+  return 1.0 + smear * gaus;
 }
 
 float MyCorrection::GetElectronRECOSF(const float eta, const float pt,
@@ -500,7 +546,7 @@ float MyCorrection::GetElectronRECOSF(const RVec<Electron> &electrons,
                                       const variation syst) const {
   float weight = 1.;
   for (const auto &electron : electrons) {
-    weight *= GetElectronRECOSF(fabs(electron.Eta()), electron.Pt(),
+    weight *= GetElectronRECOSF(electron.scEta(), electron.Pt(),
                                 electron.Phi(), syst);
   }
   return weight;
@@ -548,7 +594,7 @@ float MyCorrection::GetElectronIDSF(const TString &Electron_ID_SF_Key,
       weight *= GetElectronIDSF(Electron_ID_SF_Key, electron.scEta(),
                                 electron.Pt(), 0., syst);
     } else {
-      weight *= GetElectronIDSF(Electron_ID_SF_Key, fabs(electron.Eta()),
+      weight *= GetElectronIDSF(Electron_ID_SF_Key, electron.scEta(),
                                 electron.Pt(), electron.Phi(), syst);
     }
   }
@@ -1574,13 +1620,43 @@ float MyCorrection::GetJERSF(const float eta, const float pt,
 float MyCorrection::GetJESSF(const float area, const float eta, const float pt,
                              const float phi, const float rho,
                              const unsigned int runNumber) const {
+  if (GetEra() == "2024") {
+    string gt_base = JME_JES_GT.at("2024");
+
+    // 1. L1FastJet
+    string l1_name = gt_base;
+    l1_name.replace(l1_name.find("######"), 6, "L1FastJet");
+    auto cset_l1 = cset_jerc->at(l1_name);
+    float sf_l1 = cset_l1->evaluate({area, eta, pt, rho});
+
+    // 2. L2Relative
+    float pt_l1 = pt * sf_l1;
+    string l2_name = gt_base;
+    l2_name.replace(l2_name.find("######"), 6, "L2Relative");
+    auto cset_l2 = cset_jerc->at(l2_name);
+    float sf_l2 = cset_l2->evaluate({eta, phi, pt_l1});
+
+    float jes_sf = sf_l1 * sf_l2;
+
+    // 3. L2L3Residual (DATA에만 적용)
+    if (IsDATA) {
+      float pt_l1l2 = pt_l1 * sf_l2;
+      string res_name = gt_base;
+      res_name.replace(res_name.find("######"), 6, "L2L3Residual");
+      auto cset_res = cset_jerc->at(res_name);
+      float sf_res = cset_res->evaluate({static_cast<float>(runNumber), eta, pt_l1l2});
+      jes_sf *= sf_res;
+    }
+
+    return jes_sf;
+  }
+
   correction::CompoundCorrection::Ref cset = nullptr;
   string cset_string = JME_JES_GT.at(GetEra().Data());
   cset_string.replace(cset_string.find("######"), 6, "L1L2L3Res");
   cset = cset_jerc->compound().at(cset_string);
   vector<correction::Variable::Type> args;
-  float JESSF = 1.;
-  if (GetEra() == "2023BPix" || GetEra() == "2024") {
+  if (GetEra() == "2023BPix") {
     args = {area, eta, pt, rho, phi};
     if (IsDATA)
       args = {area, eta, pt, rho, phi, static_cast<float>(runNumber)};
@@ -1600,7 +1676,7 @@ float MyCorrection::GetJESSF(const float area, const float eta, const float pt,
                              const unsigned int runNumber, const TString &source) const {
   correction::Correction::Ref cset = nullptr;
   string cset_string = JME_JES_GT.at(GetEra().Data());
-  cset_string.replace(cset_string.find("######"), 6, source);
+  cset_string.replace(cset_string.find("######"), 6, source.Data());
   try {
     cset = cset_jerc->at(cset_string);
   } catch (const std::out_of_range& e) {
@@ -1613,17 +1689,27 @@ float MyCorrection::GetJESSF(const float area, const float eta, const float pt,
     throw; 
   }
   vector<correction::Variable::Type> args;
-  float JESSF = 1.;
-  if (GetEra() == "2023BPix" || GetEra() == "2024") {
-    args = {eta, pt};
+  if (source == "L1FastJet") {
+    args = {area, eta, pt, rho};
+  } else if (source == "L2Relative") {
+    args = {eta, phi, pt};
+  } else if (source == "L2L3Residual") {
     if (IsDATA)
       args = {static_cast<float>(runNumber), eta, pt};
-  } else if (GetEra() == "2023") {
-    args = {area, eta, pt, rho};
-    if (IsDATA)
-      args = {area, eta, pt, rho, static_cast<float>(runNumber)};
+    else
+      args = {eta, pt};
   } else {
-    args = {eta, pt};
+    if (GetEra() == "2023BPix" || GetEra() == "2024") {
+      args = {eta, pt};
+      if (IsDATA)
+        args = {static_cast<float>(runNumber), eta, pt};
+    } else if (GetEra() == "2023") {
+      args = {area, eta, pt, rho};
+      if (IsDATA)
+        args = {area, eta, pt, rho, static_cast<float>(runNumber)};
+    } else {
+      args = {eta, pt};
+    }
   }
   return safeEvaluate(cset, "GetJERSF", args);
 }
