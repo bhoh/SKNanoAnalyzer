@@ -68,6 +68,8 @@ public:
     float GetMuonIDSF(const TString &Muon_ID_SF_Key, const RVec<Muon> &muons, const variation syst = variation::nom) const;
 
     // electron
+    float GetElectronScale(const float scEta, const float r9, const float pt, const unsigned char seedGain, const unsigned int runNumber) const;
+    float GetElectronSmearWidth(const Electron &electron, const variation syst = variation::nom) const;
     float GetElectronScaleUnc(const float scEta, const unsigned char seedGain, const unsigned int runNumber, const float r9, const float pt, const variation syst = variation::nom) const;
     float GetElectronSmearUnc(const Electron &electron, const variation syst = variation::nom, const unsigned int seed=999) const;
     float GetElectronRECOSF(const float abseta, const float pt, const float phi, const variation syst = variation::nom) const;

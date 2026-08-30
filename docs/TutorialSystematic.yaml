@@ -18,6 +18,16 @@ systematics:
     source: "total"
     evtLoopAgain: true
 
+  - syst: MuonEn
+    source: "total"
+    evtLoopAgain: true
+
+  - syst: ElectronEn
+    evtLoopAgain: true
+
+  - syst: ElectronRes
+    evtLoopAgain: true
+
   - syst: Muon_ID
     target: Muon_ID
 

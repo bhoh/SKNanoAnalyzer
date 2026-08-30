@@ -18,9 +18,9 @@ void Tutorial_reco_tt::initializeAnalyzer() {
 
   MuonIDs = { Muon::MuonID::POG_TIGHT, Muon::MuonID::POG_MEDIUM_PROMPT, Muon::MuonID::POG_MVA_MU_TIGHT };
   MuonIDISOSFKeys = { "NUM_TightID_DEN_TrackerMuons", "NUM_TightPFIso_DEN_TightID", "NUM_MediumPromptID_DEN_TrackerMuons", "NUM_TightPFIso_DEN_MediumPromptID", "NUM_TightMvaMuID_DEN_TrackerMuons" };
-  ElectronIDs = { Electron::ElectronID::POG_TIGHT };
-  ElectronIDSFKeys = { "Tight" };
-  ElectronTriggerSFKeys = { "HLT_SF_Ele30_TightID" };
+  ElectronIDs = { Electron::ElectronID::POG_MVAISO_WP80 };
+  ElectronIDSFKeys = { "wp80iso" };
+  ElectronTriggerSFKeys = { "HLT_SF_Ele30_MVAiso80ID" };
 
   EleTriggerName = "HLT_Ele30_WPTight_Gsf";
   EleTriggerSafePtCut = 32.;
@@ -148,7 +148,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
   else{
     SelectedMuonIndices = SelectMuonIndices(AllMuonViews, SelectedMuonIndices_id_only, Muon::MuonID::POG_PFISO_TIGHT, 15., 2.4);
   }
-  std::vector<size_t> SelectedElectronVetoIndices = SelectElectronIndices(AllElectronViews, Electron::ElectronID::POG_LOOSE, 15., 2.5);
+  std::vector<size_t> SelectedElectronVetoIndices = SelectElectronIndices(AllElectronViews, Electron::ElectronID::POG_MVAISO_WP80, 15., 2.5);
   std::vector<size_t> SelectedElectronIndices = SelectElectronIndices(AllElectronViews, SelectedElectronVetoIndices, this_electron_id, 15., 2.5);
 
   if (SelectedMuonIndices.size() + SelectedElectronVetoIndices.size() != 1) return;
@@ -157,6 +157,26 @@ void Tutorial_reco_tt::executeEventFromParameter() {
 
   RVec<Muon> muons = MaterializeMuons(AllMuonViews, SelectedMuonIndices);
   RVec<Electron> electrons = MaterializeElectrons(AllElectronViews, SelectedElectronIndices);
+
+  if (this_syst.Contains("MuonEn")) {
+    MyCorrection::variation syst = MyCorrection::variation::nom;
+    if (this_syst.Contains("Up")) syst = MyCorrection::variation::up;
+    else if (this_syst.Contains("Down")) syst = MyCorrection::variation::down;
+    muons = ScaleMuons(muons, syst);
+  }
+
+  if (this_syst.Contains("ElectronEn")) {
+    MyCorrection::variation syst = MyCorrection::variation::nom;
+    if (this_syst.Contains("Up")) syst = MyCorrection::variation::up;
+    else if (this_syst.Contains("Down")) syst = MyCorrection::variation::down;
+    electrons = ScaleElectrons(ev, electrons, syst);
+  } else if (this_syst.Contains("ElectronRes")) {
+    MyCorrection::variation syst = MyCorrection::variation::nom;
+    if (this_syst.Contains("Up")) syst = MyCorrection::variation::up;
+    else if (this_syst.Contains("Down")) syst = MyCorrection::variation::down;
+    electrons = SmearElectrons(electrons, syst);
+  }
+
   sort(muons.begin(), muons.end(), PtComparing);
   sort(electrons.begin(), electrons.end(), PtComparing);
 
@@ -444,7 +464,7 @@ void Tutorial_reco_tt::executeEventFromParameter() {
           if (!is_electron_channel) return 1.f;
           const Electron &electron = electrons.at(0);
           return myCorr->GetElectronTriggerSF(this_electron_trig_sf_key,
-                                             electron.Eta(), electron.Pt(),
+                                             electron.scEta(), electron.Pt(),
                                              electron.Phi(), syst);
         };
     weight_function_map["Electron_Trig"] = electron_trig_lambda;

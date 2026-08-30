@@ -947,6 +947,44 @@ RVec<Electron> AnalyzerCore::MaterializeElectrons(
     electron.SetRho(view.Rho());
     electron.AttachLazyPayload(ctx, &AnalyzerCore::ElectronEnsureThunk,
                                static_cast<int>(sourceIndex));
+
+    float nominalPt = view.Pt();
+    float correctedPt = nominalPt;
+    float energyErr_corr = view.energyErr();
+
+    if (Run == 3) {
+      electron.SetEnergyResUnc(nominalPt, view.energyErr());
+
+      float scEta = view.ScEta();
+      if (scEta < -990.f) scEta = view.Eta() + view.deltaEtaInSC();
+      electron.SetScEta(scEta);
+
+      if (IsDATA) {
+        float scale = myCorr->GetElectronScale(scEta, view.r9(), nominalPt, view.SeedGain(), RunNumber);
+        correctedPt = nominalPt * scale;
+
+        float smear_width = myCorr->GetElectronSmearWidth(electron, MyCorrection::variation::nom);
+        float raw_energy = nominalPt * std::cosh(view.Eta());
+        float energyErr_sq = view.energyErr() * view.energyErr();
+        float smear_term = raw_energy * smear_width;
+        energyErr_corr = std::sqrt(energyErr_sq + smear_term * smear_term) * scale;
+      } else {
+        float smearing = myCorr->GetElectronSmearUnc(electron, MyCorrection::variation::nom, int(Rho_fixedGridRhoFastjetAll));
+        correctedPt = nominalPt * smearing;
+
+        float smear_width = myCorr->GetElectronSmearWidth(electron, MyCorrection::variation::nom);
+        float raw_energy = nominalPt * std::cosh(view.Eta());
+        float energyErr_sq = view.energyErr() * view.energyErr();
+        float smear_term = raw_energy * smear_width;
+        energyErr_corr = std::sqrt(energyErr_sq + smear_term * smear_term) * smearing;
+      }
+      
+      electron.SetPtEtaPhiM(correctedPt, view.Eta(), view.Phi(), view.M());
+      electron.SetEnergyErr(energyErr_corr);
+    } else {
+      electron.SetEnergyErr(view.energyErr());
+    }
+
     materialised.emplace_back(std::move(electron));
   }
   return materialised;
@@ -979,6 +1017,44 @@ RVec<Electron> AnalyzerCore::MaterializeElectrons(
     electron.SetRho(view.Rho());
     electron.AttachLazyPayload(ctx, &AnalyzerCore::ElectronEnsureThunk,
                                static_cast<int>(sourceIndex));
+
+    float nominalPt = view.Pt();
+    float correctedPt = nominalPt;
+    float energyErr_corr = view.energyErr();
+
+    if (Run == 3) {
+      electron.SetEnergyResUnc(nominalPt, view.energyErr());
+
+      float scEta = view.ScEta();
+      if (scEta < -990.f) scEta = view.Eta() + view.deltaEtaInSC();
+      electron.SetScEta(scEta);
+
+      if (IsDATA) {
+        float scale = myCorr->GetElectronScale(scEta, view.r9(), nominalPt, view.SeedGain(), RunNumber);
+        correctedPt = nominalPt * scale;
+
+        float smear_width = myCorr->GetElectronSmearWidth(electron, MyCorrection::variation::nom);
+        float raw_energy = nominalPt * std::cosh(view.Eta());
+        float energyErr_sq = view.energyErr() * view.energyErr();
+        float smear_term = raw_energy * smear_width;
+        energyErr_corr = std::sqrt(energyErr_sq + smear_term * smear_term) * scale;
+      } else {
+        float smearing = myCorr->GetElectronSmearUnc(electron, MyCorrection::variation::nom, int(Rho_fixedGridRhoFastjetAll));
+        correctedPt = nominalPt * smearing;
+
+        float smear_width = myCorr->GetElectronSmearWidth(electron, MyCorrection::variation::nom);
+        float raw_energy = nominalPt * std::cosh(view.Eta());
+        float energyErr_sq = view.energyErr() * view.energyErr();
+        float smear_term = raw_energy * smear_width;
+        energyErr_corr = std::sqrt(energyErr_sq + smear_term * smear_term) * smearing;
+      }
+      
+      electron.SetPtEtaPhiM(correctedPt, view.Eta(), view.Phi(), view.M());
+      electron.SetEnergyErr(energyErr_corr);
+    } else {
+      electron.SetEnergyErr(view.energyErr());
+    }
+
     materialised.emplace_back(std::move(electron));
   }
   return materialised;
@@ -993,20 +1069,27 @@ AnalyzerCore::ScaleElectrons(const Event &ev, const RVec<Electron> &electrons,
   RVec<Electron> scaled_electrons;
   for (const auto &electron : electrons) {
     float scale_variation = 1.;
+    float raw_pt = (Run == 3 && electron.dEsigmaUp() > 0.0) ? electron.dEsigmaUp() : electron.Pt();
+    float scEta = electron.scEta();
+    if (scEta < -990.f) scEta = electron.Eta() + electron.deltaEtaInSC();
+
     if (syst == MyCorrection::variation::up) {
       scale_variation = myCorr->GetElectronScaleUnc(
-          electron.scEta(), electron.SeedGain(), ev.run(), electron.r9(),
-          electron.Pt(), MyCorrection::variation::up);
+          scEta, electron.SeedGain(), ev.run(), electron.r9(),
+          raw_pt, MyCorrection::variation::up);
     } else if (syst == MyCorrection::variation::down) {
       scale_variation = myCorr->GetElectronScaleUnc(
-          electron.scEta(), electron.SeedGain(), ev.run(), electron.r9(),
-          electron.Pt(), MyCorrection::variation::down);
+          scEta, electron.SeedGain(), ev.run(), electron.r9(),
+          raw_pt, MyCorrection::variation::down);
     } else {
       throw runtime_error("[AnalyzerCore::ScaleElectrons] Invalid variation");
     }
     Electron scaled_electron = electron;
     scaled_electron.SetPtEtaPhiM(electron.Pt() * scale_variation,
                                  electron.Eta(), electron.Phi(), electron.M());
+    if (Run == 3) {
+      scaled_electron.SetEnergyErr(electron.energyErr() * scale_variation);
+    }
     scaled_electrons.emplace_back(scaled_electron);
   }
   return scaled_electrons;
@@ -1035,22 +1118,22 @@ AnalyzerCore::SmearElectrons(const RVec<Electron> &electrons,
     break;
   case 3:
     for (const auto &electron : electrons) {
-      float smeared_pt = electron.Pt();
-      if (syst == MyCorrection::variation::nom) {
-        smeared_pt *= myCorr->GetElectronSmearUnc(
-            electron, MyCorrection::variation::nom, int(electron.Rho()));
-      } else if (syst == MyCorrection::variation::up) {
-        smeared_pt *= myCorr->GetElectronSmearUnc(
-            electron, MyCorrection::variation::up, int(electron.Rho()));
-      } else if (syst == MyCorrection::variation::down) {
-        smeared_pt *= myCorr->GetElectronSmearUnc(
-            electron, MyCorrection::variation::down, int(electron.Rho()));
-      } else {
-        throw runtime_error("[AnalyzerCore::SmearElectrons] Invalid variation");
-      }
+      float raw_pt = (electron.dEsigmaUp() > 0.0) ? electron.dEsigmaUp() : electron.Pt();
+      float raw_energyErr = (electron.dEsigmaDown() > 0.0) ? electron.dEsigmaDown() : electron.energyErr();
+      float raw_energy = raw_pt * std::cosh(electron.Eta());
+      
+      float smear_width = myCorr->GetElectronSmearWidth(electron, syst);
+      float smearing = myCorr->GetElectronSmearUnc(electron, syst, int(Rho_fixedGridRhoFastjetAll));
+      
+      float smeared_pt = raw_pt * smearing;
+      float energyErr_sq = raw_energyErr * raw_energyErr;
+      float smear_term = raw_energy * smear_width;
+      float smeared_energyErr = std::sqrt(energyErr_sq + smear_term * smear_term) * smearing;
+
       Electron smeared_electron = electron;
       smeared_electron.SetPtEtaPhiM(smeared_pt, electron.Eta(), electron.Phi(),
                                     electron.M());
+      smeared_electron.SetEnergyErr(smeared_energyErr);
       smeared_electrons.emplace_back(smeared_electron);
     }
     break;

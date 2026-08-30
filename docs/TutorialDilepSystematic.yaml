@@ -1,0 +1,34 @@
+systematics:
+  - syst: Central
+    source: "total"
+
+  - syst: MuonEn
+    source: "total"
+    evtLoopAgain: true
+
+  - syst: ElectronEn
+    evtLoopAgain: true
+
+  - syst: ElectronRes
+    evtLoopAgain: true
+
+  - syst: Muon_ID
+    target: Muon_ID
+
+  - syst: Muon_Iso
+    target: Muon_Iso
+
+  - syst: Muon_Trig
+    target: Muon_Trig
+
+  - syst: Electron_ID
+    target: Electron_ID
+
+  - syst: Electron_Reco
+    target: Electron_Reco
+
+  - syst: Electron_Trig
+    target: Electron_Trig
+
+  - syst: Pileup
+    target: Pileup

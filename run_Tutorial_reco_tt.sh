@@ -18,7 +18,7 @@ SKNano.py -a Tutorial_reco_tt -i ST_tW_top_Lep -n 4 --reduction 100 -e 2024
 SKNano.py -a Tutorial_reco_tt -i ST_tW_antitop_Lep -n 4 --reduction 100 -e 2024
 SKNano.py -a Tutorial_reco_tt -i ST_tch_top_lep -n 2 --reduction 100 -e 2024
 SKNano.py -a Tutorial_reco_tt -i ST_tch_antitop_lep -n 2 --reduction 100 -e 2024
-#SKNano.py -a Tutorial_reco_tt -i Muon0 -n 10 --reduction 10 -e 2024
-#SKNano.py -a Tutorial_reco_tt -i Muon1 -n 10 --reduction 10 -e 2024
-#SKNano.py -a Tutorial_reco_tt -i EGamma0 -n 10 --reduction 10 -e 2024
-#SKNano.py -a Tutorial_reco_tt -i EGamma1 -n 10 --reduction 10 -e 2024
+SKNano.py -a Tutorial_reco_tt -i Muon0 -n 10 --reduction 10 -e 2024
+SKNano.py -a Tutorial_reco_tt -i Muon1 -n 10 --reduction 10 -e 2024
+SKNano.py -a Tutorial_reco_tt -i EGamma0 -n 10 --reduction 10 -e 2024
+SKNano.py -a Tutorial_reco_tt -i EGamma1 -n 10 --reduction 10 -e 2024
